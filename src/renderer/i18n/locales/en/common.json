@@ -1,0 +1,39 @@
+{
+  "buttons": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "close": "Close",
+    "confirm": "Confirm",
+    "apply": "Apply",
+    "create": "Create",
+    "edit": "Edit",
+    "rename": "Rename",
+    "duplicate": "Duplicate",
+    "archive": "Archive",
+    "restore": "Restore",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "copyLink": "Copy Link",
+    "openInNewTab": "Open in New Tab"
+  },
+  "labels": {
+    "name": "Name",
+    "description": "Description",
+    "search": "Search",
+    "filter": "Filter",
+    "sort": "Sort"
+  },
+  "actions": {
+    "loading": "Loading...",
+    "saving": "Saving...",
+    "deleting": "Deleting...",
+    "creating": "Creating..."
+  },
+  "aria": {
+    "close": "Close",
+    "menu": "Menu",
+    "settings": "Settings",
+    "search": "Search"
+  }
+}

@@ -2,7 +2,8 @@ import { useAtom } from "jotai"
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "motion/react"
-import { X, Bug, ChevronLeft, ChevronRight } from "lucide-react"
+import { X, Bug, ChevronLeft, ChevronRight, Languages } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 import { agentsSettingsDialogActiveTabAtom, type SettingsTab } from "../../lib/atoms"
 import {
@@ -14,6 +15,7 @@ import { SkillIconFilled, CustomAgentIconFilled, OriginalMCPIcon } from "../ui/i
 import { AgentsAppearanceTab } from "./settings-tabs/agents-appearance-tab"
 import { AgentsProfileTab } from "./settings-tabs/agents-profile-tab"
 import { AgentsPreferencesTab } from "./settings-tabs/agents-preferences-tab"
+import { AgentsLanguageTab } from "./settings-tabs/agents-language-tab"
 import { AgentsDebugTab } from "./settings-tabs/agents-debug-tab"
 import { AgentsSkillsTab } from "./settings-tabs/agents-skills-tab"
 import { AgentsCustomAgentsTab } from "./settings-tabs/agents-custom-agents-tab"
@@ -44,60 +46,16 @@ interface AgentsSettingsDialogProps {
   onClose: () => void
 }
 
-const ALL_TABS = [
-  {
-    id: "profile" as SettingsTab,
-    label: "Account",
-    icon: ProfileIconFilled,
-    description: "Manage your account settings",
-  },
-  {
-    id: "appearance" as SettingsTab,
-    label: "Appearance",
-    icon: EyeOpenFilledIcon,
-    description: "Theme settings",
-  },
-  {
-    id: "preferences" as SettingsTab,
-    label: "Preferences",
-    icon: SlidersFilledIcon,
-    description: "Claude behavior settings",
-  },
-  {
-    id: "skills" as SettingsTab,
-    label: "Skills",
-    icon: SkillIconFilled,
-    description: "Custom Claude skills",
-    beta: true,
-  },
-  {
-    id: "agents" as SettingsTab,
-    label: "Custom Agents",
-    icon: CustomAgentIconFilled,
-    description: "Manage custom Claude agents",
-    beta: true,
-  },
-  {
-    id: "mcp" as SettingsTab,
-    label: "MCP Servers",
-    icon: OriginalMCPIcon,
-    description: "Model Context Protocol servers",
-  },
-  // Debug tab - always shown in desktop for development
-  ...(isDevelopment
-    ? [
-        {
-          id: "debug" as SettingsTab,
-          label: "Debug",
-          icon: Bug,
-          description: "Test first-time user experience",
-        },
-      ]
-    : []),
-]
+interface Tab {
+  id: SettingsTab
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  description: string
+  beta?: boolean
+}
 
 interface TabButtonProps {
-  tab: (typeof ALL_TABS)[number]
+  tab: Tab
   isActive: boolean
   onClick: () => void
   isNarrow?: boolean
@@ -140,19 +98,79 @@ function TabButton({ tab, isActive, onClick, isNarrow }: TabButtonProps) {
   )
 }
 
-// Helper to get tab label from tab id
-function getTabLabel(tabId: SettingsTab): string {
-  return ALL_TABS.find((t) => t.id === tabId)?.label ?? "Settings"
-}
-
 export function AgentsSettingsDialog({
   isOpen,
   onClose,
 }: AgentsSettingsDialogProps) {
+  const { t } = useTranslation('settings')
   const [activeTab, setActiveTab] = useAtom(agentsSettingsDialogActiveTabAtom)
   const [mounted, setMounted] = useState(false)
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
   const isNarrowScreen = useIsNarrowScreen()
+
+  // Build tabs array with translations
+  const ALL_TABS: Tab[] = [
+    {
+      id: "profile",
+      label: t('tabs.profile.label'),
+      icon: ProfileIconFilled,
+      description: t('tabs.profile.description'),
+    },
+    {
+      id: "appearance",
+      label: t('tabs.appearance.label'),
+      icon: EyeOpenFilledIcon,
+      description: t('tabs.appearance.description'),
+    },
+    {
+      id: "preferences",
+      label: t('tabs.preferences.label'),
+      icon: SlidersFilledIcon,
+      description: t('tabs.preferences.description'),
+    },
+    {
+      id: "language",
+      label: t('tabs.language.label'),
+      icon: Languages,
+      description: t('tabs.language.description'),
+    },
+    {
+      id: "skills",
+      label: t('tabs.skills.label'),
+      icon: SkillIconFilled,
+      description: t('tabs.skills.description'),
+      beta: true,
+    },
+    {
+      id: "agents",
+      label: t('tabs.agents.label'),
+      icon: CustomAgentIconFilled,
+      description: t('tabs.agents.description'),
+      beta: true,
+    },
+    {
+      id: "mcp",
+      label: t('tabs.mcp.label'),
+      icon: OriginalMCPIcon,
+      description: t('tabs.mcp.description'),
+    },
+    // Debug tab - always shown in desktop for development
+    ...(isDevelopment
+      ? [
+          {
+            id: "debug" as SettingsTab,
+            label: t('tabs.debug.label'),
+            icon: Bug,
+            description: t('tabs.debug.description'),
+          },
+        ]
+      : []),
+  ]
+
+  // Helper to get tab label from tab id
+  const getTabLabel = (tabId: SettingsTab): string => {
+    return ALL_TABS.find((t) => t.id === tabId)?.label ?? t('title')
+  }
 
   // Narrow screen: track whether we're showing tab list or content
   const [showContent, setShowContent] = useState(false)
@@ -206,6 +224,8 @@ export function AgentsSettingsDialog({
         return <AgentsAppearanceTab />
       case "preferences":
         return <AgentsPreferencesTab />
+      case "language":
+        return <AgentsLanguageTab />
       case "skills":
         return <AgentsSkillsTab />
       case "agents":
@@ -265,7 +285,7 @@ export function AgentsSettingsDialog({
               id="agents-settings-dialog-title-narrow"
               className="text-lg font-semibold flex-1"
             >
-              {showContent ? getTabLabel(activeTab) : "Settings"}
+              {showContent ? getTabLabel(activeTab) : t('title')}
             </h2>
             <button
               type="button"
@@ -328,14 +348,14 @@ export function AgentsSettingsDialog({
               data-agents-page
             >
               <h2 id="agents-settings-dialog-title" className="sr-only">
-                Settings
+                {t('title')}
               </h2>
 
               <div className="flex h-full p-2">
                 {/* Left Sidebar - Tabs */}
                 <div className="w-52 px-1 py-5 space-y-4">
                   <h2 className="text-lg font-semibold px-2 pb-3 text-foreground">
-                    Settings
+                    {t('title')}
                   </h2>
 
                   {/* All Tabs */}

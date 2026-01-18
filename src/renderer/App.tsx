@@ -3,6 +3,7 @@ import { Provider as JotaiProvider, useAtomValue } from "jotai"
 import { ThemeProvider, useTheme } from "next-themes"
 import { Toaster } from "sonner"
 import { TRPCProvider } from "./contexts/TRPCProvider"
+import { I18nProvider } from "./contexts/I18nProvider"
 import { AgentsLayout } from "./features/layout/agents-layout"
 import {
   AnthropicOnboardingPage,
@@ -108,21 +109,23 @@ export function App() {
 
   return (
     <JotaiProvider store={appStore}>
-      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-        <VSCodeThemeProvider>
-          <TooltipProvider delayDuration={100}>
-            <TRPCProvider>
-              <div
-                data-agents-page
-                className="h-screen w-screen bg-background text-foreground overflow-hidden"
-              >
-                <AppContent />
-              </div>
-              <ThemedToaster />
-            </TRPCProvider>
-          </TooltipProvider>
-        </VSCodeThemeProvider>
-      </ThemeProvider>
+      <I18nProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <VSCodeThemeProvider>
+            <TooltipProvider delayDuration={100}>
+              <TRPCProvider>
+                <div
+                  data-agents-page
+                  className="h-screen w-screen bg-background text-foreground overflow-hidden"
+                >
+                  <AppContent />
+                </div>
+                <ThemedToaster />
+              </TRPCProvider>
+            </TooltipProvider>
+          </VSCodeThemeProvider>
+        </ThemeProvider>
+      </I18nProvider>
     </JotaiProvider>
   )
 }

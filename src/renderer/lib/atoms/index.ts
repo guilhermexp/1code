@@ -163,7 +163,7 @@ export const clearSubChatSelectionAtom = atom(null, (_get, set) => {
 // ============================================
 
 // Settings dialog
-export type SettingsTab = "profile" | "appearance" | "preferences" | "skills" | "agents" | "mcp" | "debug"
+export type SettingsTab = "profile" | "appearance" | "preferences" | "language" | "skills" | "agents" | "mcp" | "debug"
 export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
 export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
 
@@ -202,6 +202,21 @@ export type CtrlTabTarget = "workspaces" | "agents"
 export const ctrlTabTargetAtom = atomWithStorage<CtrlTabTarget>(
   "preferences:ctrl-tab-target",
   "workspaces", // Default: Ctrl+Tab switches workspaces, Opt+Ctrl+Tab switches agents
+  undefined,
+  { getOnInit: true },
+)
+
+// Preferences - Language
+// Application language preference
+export type Language = "en" | "pt-BR"
+export const AVAILABLE_LANGUAGES = [
+  { code: "en" as Language, label: "English" },
+  { code: "pt-BR" as Language, label: "Português Brasil" },
+] as const
+
+export const selectedLanguageAtom = atomWithStorage<Language>(
+  "preferences:language",
+  "en", // Default to English
   undefined,
   { getOnInit: true },
 )

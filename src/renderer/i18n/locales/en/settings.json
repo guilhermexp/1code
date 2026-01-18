@@ -1,0 +1,71 @@
+{
+  "title": "Settings",
+  "tabs": {
+    "profile": {
+      "label": "Account",
+      "description": "Manage your account settings"
+    },
+    "appearance": {
+      "label": "Appearance",
+      "description": "Theme settings"
+    },
+    "preferences": {
+      "label": "Preferences",
+      "description": "Claude behavior settings"
+    },
+    "language": {
+      "label": "Language",
+      "description": "Application language settings"
+    },
+    "skills": {
+      "label": "Skills",
+      "description": "Custom Claude skills"
+    },
+    "agents": {
+      "label": "Custom Agents",
+      "description": "Manage custom Claude agents"
+    },
+    "mcp": {
+      "label": "MCP Servers",
+      "description": "Model Context Protocol servers"
+    },
+    "debug": {
+      "label": "Debug",
+      "description": "Test first-time user experience"
+    }
+  },
+  "language": {
+    "title": "Language",
+    "subtitle": "Choose your preferred language for the application",
+    "applicationLanguage": "Application Language",
+    "selectLanguage": "Select the language for all interface elements",
+    "changeNote": "The language change takes effect immediately. Your preference is saved and will be remembered for future sessions."
+  },
+  "preferences": {
+    "title": "Preferences",
+    "subtitle": "Configure Claude's behavior and features",
+    "extendedThinking": {
+      "label": "Extended Thinking",
+      "description": "Enable deeper reasoning with more thinking tokens (uses more credits).",
+      "note": "Disables response streaming."
+    },
+    "soundNotifications": {
+      "label": "Sound Notifications",
+      "description": "Play a sound when agent completes work while you're away"
+    },
+    "quickSwitch": {
+      "label": "Quick Switch",
+      "description": "What ⌃Tab switches between",
+      "workspaces": "Workspaces",
+      "agents": "Agents"
+    },
+    "privacy": {
+      "title": "Privacy",
+      "subtitle": "Control what data you share with us",
+      "analytics": {
+        "label": "Share Usage Analytics",
+        "description": "Help us improve Agents by sharing anonymous usage data. We only track feature usage and app performance–never your code, prompts, or messages. No AI training on your data."
+      }
+    }
+  }
+}

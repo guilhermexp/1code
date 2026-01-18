@@ -1,0 +1,71 @@
+{
+  "title": "Configurações",
+  "tabs": {
+    "profile": {
+      "label": "Conta",
+      "description": "Gerenciar configurações da sua conta"
+    },
+    "appearance": {
+      "label": "Aparência",
+      "description": "Configurações de tema"
+    },
+    "preferences": {
+      "label": "Preferências",
+      "description": "Configurações de comportamento do Claude"
+    },
+    "language": {
+      "label": "Idioma",
+      "description": "Configurações de idioma do aplicativo"
+    },
+    "skills": {
+      "label": "Habilidades",
+      "description": "Habilidades customizadas do Claude"
+    },
+    "agents": {
+      "label": "Agentes Customizados",
+      "description": "Gerenciar agentes customizados do Claude"
+    },
+    "mcp": {
+      "label": "Servidores MCP",
+      "description": "Servidores do Model Context Protocol"
+    },
+    "debug": {
+      "label": "Debug",
+      "description": "Testar experiência de primeiro uso"
+    }
+  },
+  "language": {
+    "title": "Idioma",
+    "subtitle": "Escolha seu idioma preferido para o aplicativo",
+    "applicationLanguage": "Idioma do Aplicativo",
+    "selectLanguage": "Selecione o idioma para todos os elementos da interface",
+    "changeNote": "A mudança de idioma tem efeito imediato. Sua preferência é salva e será lembrada em sessões futuras."
+  },
+  "preferences": {
+    "title": "Preferências",
+    "subtitle": "Configure o comportamento e recursos do Claude",
+    "extendedThinking": {
+      "label": "Pensamento Estendido",
+      "description": "Ativar raciocínio mais profundo com mais tokens de pensamento (usa mais créditos).",
+      "note": "Desabilita streaming de resposta."
+    },
+    "soundNotifications": {
+      "label": "Notificações Sonoras",
+      "description": "Reproduzir um som quando o agente concluir trabalho enquanto você estiver ausente"
+    },
+    "quickSwitch": {
+      "label": "Troca Rápida",
+      "description": "O que ⌃Tab alterna entre",
+      "workspaces": "Workspaces",
+      "agents": "Agentes"
+    },
+    "privacy": {
+      "title": "Privacidade",
+      "subtitle": "Controle quais dados você compartilha conosco",
+      "analytics": {
+        "label": "Compartilhar Análises de Uso",
+        "description": "Nos ajude a melhorar o Agents compartilhando dados de uso anônimos. Rastreamos apenas uso de recursos e desempenho do app–nunca seu código, prompts ou mensagens. Sem treinamento de IA com seus dados."
+      }
+    }
+  }
+}
