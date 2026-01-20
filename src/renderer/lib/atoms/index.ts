@@ -207,6 +207,21 @@ export function normalizeCustomClaudeConfig(
   return { model, token, baseUrl }
 }
 
+// Preferences - Language
+// Application language preference
+export type Language = "en" | "pt-BR"
+export const AVAILABLE_LANGUAGES = [
+  { code: "en" as Language, label: "English" },
+  { code: "pt-BR" as Language, label: "Português Brasil" },
+] as const
+
+export const selectedLanguageAtom = atomWithStorage<Language>(
+  "preferences:language",
+  "en", // Default to English
+  undefined,
+  { getOnInit: true },
+)
+
 // Preferences - Extended Thinking
 // When enabled, Claude will use extended thinking for deeper reasoning (128K tokens)
 // Note: Extended thinking disables response streaming
