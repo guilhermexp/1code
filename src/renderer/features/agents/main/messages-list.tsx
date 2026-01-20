@@ -353,19 +353,25 @@ function useIsStreaming() {
 }
 
 // For non-last messages - no streaming subscription needed
+// Subscribes to message via Jotai messageAtomFamily, passes message as prop to AssistantMessageItem
 const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
-  message,
+  messageId,
   subChatId,
   isMobile,
   sandboxSetupStatus,
   onUrlClick,
 }: {
-  message: any
+  messageId: string
   subChatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   onUrlClick?: (url: string) => void
 }) {
+  // Subscribe to this specific message via Jotai - only re-renders when THIS message changes
+  const message = useAtomValue(messageAtomFamily(messageId))
+
+  if (!message) return null
+
   return (
     <AssistantMessageItem
       message={message}
@@ -380,23 +386,29 @@ const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
   )
 })
 
-// For the last message - subscribes to streaming status via Jotai
+// For the last message - subscribes to streaming status AND message via Jotai
+// Passes message as prop to AssistantMessageItem
 const StreamingMessageItem = memo(function StreamingMessageItem({
-  message,
+  messageId,
   subChatId,
   isMobile,
   sandboxSetupStatus,
   onUrlClick,
 }: {
-  message: any
+  messageId: string
   subChatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   onUrlClick?: (url: string) => void
 }) {
-  // Use Jotai atoms for streaming status
+  // Subscribe to this specific message via Jotai - only re-renders when THIS message changes
+  const message = useAtomValue(messageAtomFamily(messageId))
+
+  // Subscribe to streaming status
   const isStreaming = useAtomValue(isStreamingAtom)
   const status = useAtomValue(chatStatusAtom)
+
+  if (!message) return null
 
   return (
     <AssistantMessageItem
@@ -466,18 +478,17 @@ export const MessageItemWrapper = memo(function MessageItemWrapper({
   sandboxSetupStatus,
   onUrlClick,
 }: MessageItemWrapperProps) {
-  // Use Jotai atoms for fine-grained subscriptions
-  const message = useAtomValue(messageAtomFamily(messageId))
+
+  // Only subscribe to isLast - NOT to message content!
+  // StreamingMessageItem and NonStreamingMessageItem will subscribe to message themselves
   const isLast = useAtomValue(isLastMessageAtomFamily(messageId))
-
-
-  if (!message) return null
 
   // Only the last message subscribes to streaming status
   if (isLast) {
+    // StreamingMessageItem subscribes to messageAtomFamily internally
     return (
       <StreamingMessageItem
-        message={message}
+        messageId={messageId}
         subChatId={subChatId}
         isMobile={isMobile}
         sandboxSetupStatus={sandboxSetupStatus}
@@ -486,9 +497,10 @@ export const MessageItemWrapper = memo(function MessageItemWrapper({
     )
   }
 
+  // NonStreamingMessageItem subscribes to messageAtomFamily internally
   return (
     <NonStreamingMessageItem
-      message={message}
+      messageId={messageId}
       subChatId={subChatId}
       onUrlClick={onUrlClick}
       isMobile={isMobile}
