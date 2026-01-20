@@ -263,6 +263,30 @@ export function createMainWindow(): BrowserWindow {
   // Update current window reference
   currentWindow = window
 
+  // Configure CSP to allow localhost iframes (for preview feature)
+  const ses = session.fromPartition("persist:main")
+  ses.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = { ...details.responseHeaders }
+
+    // Allow loading localhost in iframes by modifying CSP
+    if (responseHeaders["content-security-policy"]) {
+      responseHeaders["content-security-policy"] = responseHeaders[
+        "content-security-policy"
+      ].map((csp: string) => {
+        // Add localhost to frame-src and child-src directives
+        if (csp.includes("default-src")) {
+          return csp.replace(
+            /default-src ([^;]*)/,
+            "default-src $1; frame-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; child-src 'self' http://localhost:* http://127.0.0.1:*"
+          )
+        }
+        return csp
+      })
+    }
+
+    callback({ responseHeaders })
+  })
+
   // Setup tRPC IPC handler (singleton pattern)
   if (ipcHandler) {
     // Reuse existing handler, just attach new window
