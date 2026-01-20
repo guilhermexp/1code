@@ -3,12 +3,13 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { useAtom } from "jotai"
 import { Button } from "../../../components/ui/button"
-import { RotateCw } from "lucide-react"
+import { RotateCw, Target } from "lucide-react"
 import {
   ExternalLinkIcon,
   IconDoubleChevronRight,
   IconChatBubble,
 } from "../../../components/ui/icons"
+import { toast } from "sonner"
 import { PreviewUrlInput } from "./preview-url-input"
 import {
   previewPathAtomFamily,
@@ -22,6 +23,7 @@ import { ScaleControl } from "./scale-control"
 import { DevicePresetsBar } from "./device-presets-bar"
 import { ResizeHandle } from "./resize-handle"
 import { MobileCopyLinkButton } from "./mobile-copy-link-button"
+import { InspectorSetupDialog } from "./inspector-setup-dialog"
 import { DEVICE_PRESETS, AGENTS_PREVIEW_CONSTANTS } from "../constants"
 // import { getSandboxPreviewUrl } from "@/app/(alpha)/canvas/{components}/settings-tabs/repositories/preview-url"
 const getSandboxPreviewUrl = (sandboxId: string, port: number, _type: string) => `https://${sandboxId}-${port}.csb.app` // Desktop mock
@@ -69,6 +71,10 @@ export function AgentPreview({
   const [maxWidth, setMaxWidth] = useState<number>(
     AGENTS_PREVIEW_CONSTANTS.MAX_WIDTH,
   )
+
+  // Inspector Mode state for React Grab integration
+  const [inspectorEnabled, setInspectorEnabled] = useState(false)
+  const [showInspectorSetup, setShowInspectorSetup] = useState(false)
 
   // Dual state architecture:
   // - loadedPath: Controls iframe src (stable, only changes on manual navigation)
@@ -342,6 +348,110 @@ export function AgentPreview({
     [device, maxWidth, setDevice],
   )
 
+  // React Grab: Inject script into iframe for component detection
+  const injectReactGrab = useCallback(() => {
+    if (!iframeRef.current?.contentWindow) return
+
+    try {
+      // Try to access iframe document - this will fail for cross-origin iframes
+      const iframeDoc = iframeRef.current.contentWindow.document
+      const script = iframeDoc.createElement("script")
+
+      // Load react-grab from CDN (UMD version)
+      script.src = "https://cdn.jsdelivr.net/npm/react-grab@latest/dist/umd/index.min.js"
+      script.async = true
+
+      script.onload = () => {
+        // Initialize react-grab after loading
+        const initScript = iframeDoc.createElement("script")
+        initScript.textContent = `
+          if (window.ReactGrab) {
+            window.reactGrabApi = window.ReactGrab.init();
+
+            // Custom plugin to send data to parent window
+            window.reactGrabApi.registerPlugin({
+              name: "1code-integration",
+              hooks: {
+                onCopySuccess: (elements, content) => {
+                  // Send to parent via postMessage
+                  window.parent.postMessage({
+                    type: "REACT_GRAB_COMPONENT",
+                    data: {
+                      content: content,
+                      elements: elements.map(el => ({
+                        tagName: el.tagName,
+                        className: el.className
+                      }))
+                    }
+                  }, "*");
+                }
+              }
+            });
+
+            // Activate automatically
+            window.reactGrabApi.activate();
+          }
+        `
+        iframeDoc.head.appendChild(initScript)
+      }
+
+      script.onerror = () => {
+        console.error("[Preview] Failed to load react-grab")
+        toast.error("Failed to enable Inspector Mode", {
+          description: "Could not load the component inspector library"
+        })
+      }
+
+      iframeDoc.head.appendChild(script)
+    } catch (error) {
+      // Cross-origin error - cannot access iframe document
+      console.warn("[Preview] Cannot inject React Grab: Cross-origin iframe", error)
+
+      // Show setup dialog instead of just an error
+      setShowInspectorSetup(true)
+    }
+  }, [])
+
+  // React Grab: Handle component detection messages
+  const handleReactGrabMessage = useCallback((event: MessageEvent) => {
+    // Verify origin
+    if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) {
+      return
+    }
+
+    if (event.data?.type === "REACT_GRAB_COMPONENT") {
+      const componentInfo = event.data.data.content
+
+      // Send to chat via custom event
+      window.dispatchEvent(
+        new CustomEvent("agent-add-component-context", {
+          detail: {
+            chatId,
+            componentInfo
+          }
+        })
+      )
+
+      // Visual feedback
+      toast.success("Component added to context", {
+        description: "You can now ask Claude to modify this component"
+      })
+    }
+  }, [chatId])
+
+  // React Grab: Inject script when Inspector Mode is enabled
+  useEffect(() => {
+    if (isLoaded && inspectorEnabled) {
+      injectReactGrab()
+    }
+  }, [isLoaded, inspectorEnabled, injectReactGrab])
+
+  // React Grab: Listen for component detection messages
+  useEffect(() => {
+    window.addEventListener("message", handleReactGrabMessage as EventListener)
+    return () => window.removeEventListener("message", handleReactGrabMessage as EventListener)
+  }, [handleReactGrabMessage])
+
   return (
     <div
       className={cn(
@@ -404,6 +514,19 @@ export function AgentPreview({
               />
             </div>
 
+            {/* Inspector Mode */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setInspectorEnabled(!inspectorEnabled)}
+              className={cn(
+                "h-7 w-7 flex-shrink-0 rounded-md",
+                inspectorEnabled && "bg-accent text-accent-foreground"
+              )}
+            >
+              <Target className="h-4 w-4" />
+            </Button>
+
             {/* Scale control */}
             <ScaleControl value={scale} onChange={setScale} />
 
@@ -450,8 +573,21 @@ export function AgentPreview({
             />
           </div>
 
-          {/* Right: External link + Mode toggle + Close */}
+          {/* Right: Inspector + External link + Mode toggle + Close */}
           <div className="flex items-center justify-end gap-1 flex-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setInspectorEnabled(!inspectorEnabled)}
+              className={cn(
+                "h-7 w-7 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md",
+                inspectorEnabled && "bg-accent text-accent-foreground"
+              )}
+              title={inspectorEnabled ? "Disable Inspector" : "Enable Inspector"}
+            >
+              <Target className="h-3.5 w-3.5" />
+            </Button>
+
             <Button
               variant="ghost"
               className="h-7 w-7 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
@@ -646,6 +782,12 @@ export function AgentPreview({
           </>
         )}
       </div>
+
+      {/* Inspector Setup Dialog */}
+      <InspectorSetupDialog
+        open={showInspectorSetup}
+        onOpenChange={setShowInspectorSetup}
+      />
     </div>
   )
 }

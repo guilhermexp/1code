@@ -268,16 +268,16 @@ export function createMainWindow(): BrowserWindow {
   ses.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = { ...details.responseHeaders }
 
-    // Allow loading localhost in iframes by modifying CSP
+    // Allow loading localhost in iframes and jsdelivr CDN by modifying CSP
     if (responseHeaders["content-security-policy"]) {
       responseHeaders["content-security-policy"] = responseHeaders[
         "content-security-policy"
       ].map((csp: string) => {
-        // Add localhost to frame-src and child-src directives
+        // Add localhost to frame-src and child-src directives, plus jsdelivr for react-grab
         if (csp.includes("default-src")) {
           return csp.replace(
             /default-src ([^;]*)/,
-            "default-src $1; frame-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; child-src 'self' http://localhost:* http://127.0.0.1:*"
+            "default-src $1; frame-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; child-src 'self' http://localhost:* http://127.0.0.1:*; script-src-elem 'self' https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net"
           )
         }
         return csp

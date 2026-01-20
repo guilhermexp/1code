@@ -1851,6 +1851,25 @@ function ChatViewInner({
     }
   }, [pendingPrMessage, isStreaming, sendMessage, setPendingPrMessage])
 
+  // React Grab: Handle component context from Inspector Mode
+  useEffect(() => {
+    const handleAddComponentContext = (e: CustomEvent) => {
+      const { chatId: eventChatId, componentInfo } = e.detail
+
+      // Only process if this is the active chat
+      if (eventChatId !== parentChatId) {
+        return
+      }
+
+      // Add component info to text contexts
+      // Use a special sourceMessageId to identify component inspector contexts
+      addTextContext(componentInfo, "component-inspector")
+    }
+
+    window.addEventListener("agent-add-component-context", handleAddComponentContext as EventListener)
+    return () => window.removeEventListener("agent-add-component-context", handleAddComponentContext as EventListener)
+  }, [parentChatId, addTextContext])
+
   // Watch for pending Review message and send it
   const [pendingReviewMessage, setPendingReviewMessage] = useAtom(
     pendingReviewMessageAtom,
