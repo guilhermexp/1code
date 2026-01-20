@@ -1,38 +1,157 @@
 # Inspector Mode - React Component Detection
 
-O Inspector Mode permite que você clique em componentes React no preview e adicione automaticamente o caminho do arquivo ao contexto do chat, facilitando solicitações específicas ao Claude.
+O Inspector Mode permite que você selecione componentes React no preview usando React Grab e adicione automaticamente o caminho do arquivo ao contexto do chat do 1code.
 
 ## 🚀 Como Usar
 
-### Opção 1: Injeção Automática (Same-Origin)
+### Passo 1: Instalar React Grab no seu projeto
 
-Se o seu preview estiver rodando no mesmo domínio do 1code, a injeção é automática:
+Se você ainda não tem React Grab instalado:
 
-1. Abra um preview no chat
-2. Clique no botão **Target** (🎯) na toolbar do preview
-3. Passe o mouse sobre um componente React
-4. Pressione **⌘C** (Mac) ou **Ctrl+C** (Windows/Linux)
-5. O componente será adicionado ao contexto do chat
+```bash
+npx -y grab@latest init
+```
 
-### Opção 2: Setup Manual (Cross-Origin)
+Ou instale manualmente:
 
-Se o preview estiver em um domínio diferente (ex: `localhost:3000` enquanto o 1code roda em `localhost:5173`), você precisa adicionar o código manualmente ao seu projeto:
+```bash
+npm install react-grab
+# ou
+bun add react-grab
+```
 
-1. Clique no botão **Target** (🎯) no preview
-2. Um dialog aparecerá com instruções e código
-3. Copie o código fornecido
-4. Cole no entry point do seu app (ex: `main.tsx` ou `App.tsx`)
-5. Recarregue seu app
-6. Agora você pode usar o Inspector Mode normalmente
+### Passo 2: Adicionar o plugin de integração com 1code
 
-#### Código para Setup Manual
+No arquivo onde você inicializa o React Grab (geralmente `main.tsx` ou `App.tsx`), adicione nosso plugin customizado:
 
 ```typescript
-// Add this to your app's entry point (e.g., main.tsx or App.tsx)
-// This enables component inspection with 1code
+if (window.ReactGrab) {
+  const api = window.ReactGrab.init();
 
-if (typeof window !== 'undefined') {
-  // Load React Grab dynamically
+  // Plugin que envia dados para o 1code
+  api.registerPlugin({
+    name: '1code-integration',
+    hooks: {
+      onCopySuccess: (elements, content) => {
+        // Envia para a janela pai (1code)
+        window.parent.postMessage({
+          type: 'REACT_GRAB_COMPONENT',
+          data: { content, elements }
+        }, '*');
+      }
+    }
+  });
+
+  api.activate();
+}
+```
+
+### Passo 3: Usar o Inspector Mode
+
+1. Abra o preview no 1code
+2. Clique no botão **Target** (🎯) na toolbar do preview
+3. Instruções aparecerão no topo do preview
+4. No seu app:
+   - Passe o mouse sobre um componente React
+   - Pressione **⌘C** (Mac) ou **Ctrl+C** (Windows/Linux)
+5. O componente será adicionado automaticamente ao contexto do chat!
+6. Agora você pode pedir ao Claude para modificar esse componente
+
+## 🎯 Exemplo de Uso
+
+```
+[Você aponta para um botão e pressiona ⌘C]
+Toast: "Component added to context"
+
+Você: "Change this button color to blue and make it larger"
+
+Claude: [Recebe o contexto: src/components/LoginButton.tsx:45:10]
+Claude: [Modifica o arquivo correto automaticamente]
+```
+
+## 📋 Como Funciona
+
+1. **React Grab** detecta componentes React usando a árvore Fiber (dev mode)
+2. Quando você pressiona **⌘C** em um componente, o `onCopySuccess` hook é acionado
+3. **Nosso plugin** envia os dados via `postMessage` para o 1code
+4. **1code** adiciona o caminho do arquivo ao contexto do chat
+5. **Claude** recebe o contexto e sabe exatamente qual arquivo modificar
+
+## ⚠️ Limitações
+
+### 1. Só funciona em desenvolvimento
+Apps em produção não têm source maps React necessários para detectar os caminhos dos arquivos.
+
+### 2. Só funciona com React
+O React Grab depende do React Fiber. Não funciona com:
+- Vue.js
+- Svelte
+- Angular
+- Vanilla JS
+
+### 3. Qualidade depende do bundler
+- **Vite**: Excelente (nome, arquivo, linha, coluna)
+- **Webpack**: Bom (nome, arquivo, linha)
+- **Next.js**: Bom (nome, arquivo)
+- **CRA**: Limitado
+
+## 🛠️ Troubleshooting
+
+### "Component added to context" não aparece
+
+**Solução:** Verifique se o plugin está instalado corretamente:
+1. Abra o DevTools do preview (Cmd+Option+I)
+2. No console, digite: `window.ReactGrab`
+3. Se retornar `undefined`, o React Grab não está instalado
+4. Se retornar um objeto, verifique se o plugin está registrado
+
+### Componente detectado mas sem caminho
+
+**Causa:** Source maps desabilitados ou modo produção
+
+**Solução:**
+- Confirme que está em `NODE_ENV=development`
+- Verifique se o bundler gera source maps
+- Vite: `sourcemap: true` no config
+- Webpack: `devtool: 'source-map'`
+
+### React Grab não detecta componentes
+
+**Causa:** React DevTools não funciona = source maps ausentes
+
+**Solução:**
+1. Instale React DevTools no browser
+2. Se não aparecer no DevTools, source maps estão desabilitados
+3. Configure seu bundler para gerar source maps em dev mode
+
+### Plugin não envia dados
+
+**Verificação:**
+```typescript
+// Adicione log para debug
+onCopySuccess: (elements, content) => {
+  console.log('React Grab - Component copied:', content);
+  window.parent.postMessage({
+    type: 'REACT_GRAB_COMPONENT',
+    data: { content, elements }
+  }, '*');
+}
+```
+
+Se o log aparece mas o toast não, o problema está na comunicação postMessage.
+
+## 📦 Estrutura Completa do Setup
+
+```typescript
+// src/main.tsx (ou App.tsx)
+
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+
+// React Grab + 1code Integration (dev only)
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  // Carregar React Grab dinamicamente
   const script = document.createElement('script');
   script.src = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/umd/index.min.js';
   script.async = true;
@@ -41,11 +160,12 @@ if (typeof window !== 'undefined') {
     if (window.ReactGrab) {
       const api = window.ReactGrab.init();
 
-      // Send component info to parent window (1code)
+      // Plugin de integração com 1code
       api.registerPlugin({
         name: '1code-integration',
         hooks: {
           onCopySuccess: (elements, content) => {
+            console.log('[1code] Component copied:', content);
             window.parent.postMessage({
               type: 'REACT_GRAB_COMPONENT',
               data: { content, elements }
@@ -55,112 +175,31 @@ if (typeof window !== 'undefined') {
       });
 
       api.activate();
+      console.log('[1code] Inspector integration active');
     }
   };
 
   document.head.appendChild(script);
 }
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
 ```
 
-## ⚠️ Limitações
+## 📚 Recursos
 
-### 1. Só funciona em modo desenvolvimento
-Apps em produção não têm source maps React, então o Inspector Mode não consegue detectar os caminhos dos arquivos.
-
-### 2. Só funciona com React
-O React Grab depende do React Fiber (árvore interna do React). Não funciona com:
-- Vue.js
-- Svelte
-- Angular
-- Vanilla JS
-
-### 3. Cross-Origin Restrictions
-Por segurança, navegadores bloqueiam acesso a iframes de origens diferentes. Por isso:
-- ✅ Funciona automaticamente quando preview e 1code estão no mesmo domínio
-- ❌ Requer setup manual quando estão em domínios diferentes
-
-### 4. Dependência do Bundler
-A quantidade de informação disponível depende do bundler:
-- **Vite**: Excelente suporte (nome, arquivo, linha, coluna)
-- **Webpack**: Bom suporte (nome, arquivo, linha)
-- **Next.js**: Bom suporte (nome, arquivo)
-- **Create React App**: Suporte limitado
-
-## 🔍 Como Funciona
-
-O Inspector Mode usa a biblioteca [React Grab](https://github.com/aidenybai/react-grab) criada por Aiden Bai. Esta biblioteca:
-
-1. Acessa a árvore React Fiber (estrutura interna do React em dev mode)
-2. Detecta qual componente está sendo apontado
-3. Extrai informações do componente:
-   - Nome do componente
-   - Caminho do arquivo fonte
-   - Linha e coluna no código
-4. Envia essas informações via `postMessage` para o 1code
-5. O 1code adiciona ao contexto do chat como "text context"
-
-Quando você envia uma mensagem, o Claude recebe:
-```
-User: Change the button color to blue
-
-[Context: Component at src/components/LoginForm.tsx:45:10]
-```
-
-Isso permite que o Claude saiba exatamente qual arquivo modificar sem precisar perguntar ou procurar.
-
-## 🎯 Casos de Uso
-
-### 1. Modificar Componentes Específicos
-```
-Usuário clica no botão de login e pressiona ⌘C
-Usuário: "Change this button to be primary variant"
-Claude: Modifica src/components/LoginButton.tsx
-```
-
-### 2. Debug de Layouts
-```
-Usuário clica em um card desalinhado e pressiona ⌘C
-Usuário: "Fix the alignment of this card"
-Claude: Ajusta o CSS em src/components/Card.tsx
-```
-
-### 3. Refatoração
-```
-Usuário clica em múltiplos componentes similares
-Usuário: "Extract these into a shared component"
-Claude: Cria componente comum e refatora os arquivos
-```
-
-## 🛠️ Troubleshooting
-
-### Inspector Mode não ativa
-- Verifique se o preview está carregado
-- Confirme que é um app React em dev mode
-- Tente recarregar o preview
-
-### Não detecta componentes
-- Verifique se o React DevTools funciona no app (se não funcionar, source maps estão desabilitados)
-- Confirme que está em modo desenvolvimento, não produção
-- Verifique console do preview para erros
-
-### Error: "Cross-origin iframe"
-- Normal quando preview está em domínio diferente
-- Siga as instruções do setup manual (Opção 2 acima)
-
-### Componente detectado mas sem caminho de arquivo
-- Source maps podem estar desabilitados
-- Verifique config do bundler (Vite/Webpack)
-- Em modo produção, isso é esperado
-
-## 📚 Recursos Adicionais
-
-- [React Grab no GitHub](https://github.com/aidenybai/react-grab)
+- [React Grab - GitHub](https://github.com/aidenybai/react-grab)
 - [React DevTools](https://react.dev/learn/react-developer-tools)
-- [Como funcionam Source Maps](https://web.dev/source-maps/)
+- [Vite Source Maps](https://vitejs.dev/config/build-options.html#build-sourcemap)
+- [Webpack Source Maps](https://webpack.js.org/configuration/devtool/)
 
-## 🤝 Contribuindo
+## 🤝 Suporte
 
-Se encontrar bugs ou tiver sugestões para o Inspector Mode:
-1. Abra uma issue no repositório do 1code
-2. Descreva o problema e os passos para reproduzir
-3. Inclua informações sobre seu setup (framework, bundler, browser)
+Problemas ou dúvidas? Abra uma issue no repositório do 1code com:
+- Framework e bundler usados (Vite, Webpack, Next.js, etc.)
+- Mensagens de erro do console
+- Screenshot do problema
+- Se o React DevTools funciona no seu app

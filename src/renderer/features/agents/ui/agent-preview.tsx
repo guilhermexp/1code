@@ -23,7 +23,7 @@ import { ScaleControl } from "./scale-control"
 import { DevicePresetsBar } from "./device-presets-bar"
 import { ResizeHandle } from "./resize-handle"
 import { MobileCopyLinkButton } from "./mobile-copy-link-button"
-import { InspectorSetupDialog } from "./inspector-setup-dialog"
+import { InspectorSetupInstructions } from "./inspector-setup-instructions"
 import { DEVICE_PRESETS, AGENTS_PREVIEW_CONSTANTS } from "../constants"
 // import { getSandboxPreviewUrl } from "@/app/(alpha)/canvas/{components}/settings-tabs/repositories/preview-url"
 const getSandboxPreviewUrl = (sandboxId: string, port: number, _type: string) => `https://${sandboxId}-${port}.csb.app` // Desktop mock
@@ -74,7 +74,6 @@ export function AgentPreview({
 
   // Inspector Mode state for React Grab integration
   const [inspectorEnabled, setInspectorEnabled] = useState(false)
-  const [showInspectorSetup, setShowInspectorSetup] = useState(false)
 
   // Dual state architecture:
   // - loadedPath: Controls iframe src (stable, only changes on manual navigation)
@@ -348,70 +347,6 @@ export function AgentPreview({
     [device, maxWidth, setDevice],
   )
 
-  // React Grab: Inject script into iframe for component detection
-  const injectReactGrab = useCallback(() => {
-    if (!iframeRef.current?.contentWindow) return
-
-    try {
-      // Try to access iframe document - this will fail for cross-origin iframes
-      const iframeDoc = iframeRef.current.contentWindow.document
-      const script = iframeDoc.createElement("script")
-
-      // Load react-grab from CDN (UMD version)
-      script.src = "https://cdn.jsdelivr.net/npm/react-grab@latest/dist/umd/index.min.js"
-      script.async = true
-
-      script.onload = () => {
-        // Initialize react-grab after loading
-        const initScript = iframeDoc.createElement("script")
-        initScript.textContent = `
-          if (window.ReactGrab) {
-            window.reactGrabApi = window.ReactGrab.init();
-
-            // Custom plugin to send data to parent window
-            window.reactGrabApi.registerPlugin({
-              name: "1code-integration",
-              hooks: {
-                onCopySuccess: (elements, content) => {
-                  // Send to parent via postMessage
-                  window.parent.postMessage({
-                    type: "REACT_GRAB_COMPONENT",
-                    data: {
-                      content: content,
-                      elements: elements.map(el => ({
-                        tagName: el.tagName,
-                        className: el.className
-                      }))
-                    }
-                  }, "*");
-                }
-              }
-            });
-
-            // Activate automatically
-            window.reactGrabApi.activate();
-          }
-        `
-        iframeDoc.head.appendChild(initScript)
-      }
-
-      script.onerror = () => {
-        console.error("[Preview] Failed to load react-grab")
-        toast.error("Failed to enable Inspector Mode", {
-          description: "Could not load the component inspector library"
-        })
-      }
-
-      iframeDoc.head.appendChild(script)
-    } catch (error) {
-      // Cross-origin error - cannot access iframe document
-      console.warn("[Preview] Cannot inject React Grab: Cross-origin iframe", error)
-
-      // Show setup dialog instead of just an error
-      setShowInspectorSetup(true)
-    }
-  }, [])
-
   // React Grab: Handle component detection messages
   const handleReactGrabMessage = useCallback((event: MessageEvent) => {
     // Verify origin
@@ -439,14 +374,8 @@ export function AgentPreview({
     }
   }, [chatId])
 
-  // React Grab: Inject script when Inspector Mode is enabled
-  useEffect(() => {
-    if (isLoaded && inspectorEnabled) {
-      injectReactGrab()
-    }
-  }, [isLoaded, inspectorEnabled, injectReactGrab])
 
-  // React Grab: Listen for component detection messages
+  // React Grab: Listen for component detection messages (always active)
   useEffect(() => {
     window.addEventListener("message", handleReactGrabMessage as EventListener)
     return () => window.removeEventListener("message", handleReactGrabMessage as EventListener)
@@ -606,6 +535,13 @@ export function AgentPreview({
               </Button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Inspector Setup Instructions - shown when Inspector Mode is active */}
+      {!isMobile && !hideHeader && inspectorEnabled && (
+        <div className="px-3 py-2 bg-blue-50/50 dark:bg-blue-950/20 border-b">
+          <InspectorSetupInstructions />
         </div>
       )}
 
@@ -782,12 +718,6 @@ export function AgentPreview({
           </>
         )}
       </div>
-
-      {/* Inspector Setup Dialog */}
-      <InspectorSetupDialog
-        open={showInspectorSetup}
-        onOpenChange={setShowInspectorSetup}
-      />
     </div>
   )
 }
