@@ -167,6 +167,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
 
     return new ReadableStream({
       start: (controller) => {
+        let controllerClosed = false
         const sub = trpcClient.claude.chat.subscribe(
           {
             subChatId: this.config.subChatId,
@@ -277,6 +278,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                 // the SDK Chat properly resets status from "streaming" to "ready"
                 // This allows user to retry sending messages after failed auth
                 console.log(`[SD] R:AUTH_ERR sub=${subId}`)
+                controllerClosed = true
                 controller.error(new Error("Authentication required"))
                 return
               }
@@ -324,18 +326,21 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                 }
               }
 
-              // Try to enqueue, but don't crash if stream is already closed
-              try {
-                controller.enqueue(chunk)
-              } catch (e) {
-                // CRITICAL: Log when enqueue fails - this could explain missing chunks!
-                console.log(`[SD] R:ENQUEUE_ERR sub=${subId} type=${chunk.type} n=${chunkCount} err=${e}`)
+              // Only enqueue if controller is still open
+              if (!controllerClosed) {
+                try {
+                  controller.enqueue(chunk)
+                } catch (e) {
+                  // Log when enqueue fails - this could explain missing chunks
+                  console.log(`[SD] R:ENQUEUE_ERR sub=${subId} type=${chunk.type} n=${chunkCount} err=${e}`)
+                }
               }
 
-              if (chunk.type === "finish") {
+              if (chunk.type === "finish" && !controllerClosed) {
                 console.log(`[SD] R:FINISH sub=${subId} n=${chunkCount}`)
                 try {
                   controller.close()
+                  controllerClosed = true
                 } catch {
                   // Already closed
                 }
@@ -356,6 +361,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                 },
               })
 
+              controllerClosed = true
               controller.error(err)
             },
             onComplete: () => {
@@ -363,10 +369,13 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
               // Note: Don't clear pending questions here - let active-chat.tsx handle it
               // via the stream stop detection effect. Clearing here causes race conditions
               // where sync effect immediately restores from messages.
-              try {
-                controller.close()
-              } catch {
-                // Already closed
+              if (!controllerClosed) {
+                try {
+                  controller.close()
+                  controllerClosed = true
+                } catch {
+                  // Already closed
+                }
               }
             },
           },
@@ -377,10 +386,13 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
           console.log(`[SD] R:ABORT sub=${subId} n=${chunkCount} last=${lastChunkType}`)
           sub.unsubscribe()
           trpcClient.claude.cancel.mutate({ subChatId: this.config.subChatId })
-          try {
-            controller.close()
-          } catch {
-            // Already closed
+          if (!controllerClosed) {
+            try {
+              controller.close()
+              controllerClosed = true
+            } catch {
+              // Already closed
+            }
           }
         })
       },
