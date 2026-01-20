@@ -4855,40 +4855,23 @@ Make sure to preserve all functionality from both branches when resolving confli
                     </>
                   )}
                 </div>
-                {/* Open Preview Button - shows when preview is closed (desktop only) */}
-                {!isMobileFullscreen &&
-                  !isPreviewSidebarOpen &&
-                  sandboxId &&
-                  (canOpenPreview ? (
-                    <Tooltip delayDuration={500}>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setIsPreviewSidebarOpen(true)}
-                          className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                          aria-label="Open preview"
-                        >
-                          <IconOpenSidebarRight className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Open preview</TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <PreviewSetupHoverCard>
-                      <span className="inline-flex ml-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled
-                          className="h-6 w-6 p-0 text-muted-foreground flex-shrink-0 rounded-md cursor-not-allowed pointer-events-none"
-                          aria-label="Preview not available"
-                        >
-                          <IconOpenSidebarRight className="h-4 w-4" />
-                        </Button>
-                      </span>
-                    </PreviewSetupHoverCard>
-                  ))}
+                {/* Open Preview Button - always shows when preview is closed (desktop only) */}
+                {!isMobileFullscreen && !isPreviewSidebarOpen && (
+                  <Tooltip delayDuration={500}>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsPreviewSidebarOpen(true)}
+                        className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
+                        aria-label="Open preview"
+                      >
+                        <IconOpenSidebarRight className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Open preview</TooltipContent>
+                  </Tooltip>
+                )}
                 {/* Terminal Button - shows when terminal is closed and worktree exists (desktop only) */}
                 {!isMobileFullscreen &&
                   !isTerminalSidebarOpen &&
@@ -5204,8 +5187,8 @@ Make sure to preserve all functionality from both branches when resolving confli
           return null
         })()}
 
-        {/* Preview Sidebar - hidden on mobile fullscreen and when preview is not available */}
-        {canOpenPreview && !isMobileFullscreen && (
+        {/* Preview Sidebar - always available, can be opened manually */}
+        {!isMobileFullscreen && (
           <ResizableSidebar
             isOpen={isPreviewSidebarOpen}
             onClose={() => setIsPreviewSidebarOpen(false)}
@@ -5219,60 +5202,18 @@ Make sure to preserve all functionality from both branches when resolving confli
             className="bg-tl-background border-l"
             style={{ borderLeftWidth: "0.5px" }}
           >
-            {isQuickSetup ? (
-              <div className="flex flex-col h-full">
-                {/* Header with close button */}
-                <div className="flex items-center justify-end px-3 h-10 bg-tl-background flex-shrink-0 border-b border-border/50">
-                  <Button
-                    variant="ghost"
-                    className="h-7 w-7 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
-                    onClick={() => setIsPreviewSidebarOpen(false)}
-                  >
-                    <IconCloseSidebarRight className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                </div>
-                {/* Content */}
-                <div className="flex flex-col items-center justify-center flex-1 p-6 text-center">
-                  <div className="text-muted-foreground mb-4">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="48"
-                      height="48"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="opacity-50"
-                    >
-                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                      <line x1="8" y1="21" x2="16" y2="21" />
-                      <line x1="12" y1="17" x2="12" y2="21" />
-                    </svg>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Preview not available
-                  </p>
-                  <p className="text-xs text-muted-foreground/70 max-w-[200px]">
-                    Set up this repository to enable live preview
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <AgentPreview
-                chatId={chatId}
-                sandboxId={sandboxId}
-                port={previewPort}
-                customUrl={customPreviewUrl ?? undefined}
-                repository={repository}
-                hideHeader={false}
-                onClose={() => {
-                  setIsPreviewSidebarOpen(false)
-                  setCustomPreviewUrl(null)
-                }}
-              />
-            )}
+            <AgentPreview
+              chatId={chatId}
+              sandboxId={sandboxId}
+              port={previewPort}
+              customUrl={customPreviewUrl ?? undefined}
+              repository={repository}
+              hideHeader={false}
+              onClose={() => {
+                setIsPreviewSidebarOpen(false)
+                setCustomPreviewUrl(null)
+              }}
+            />
           </ResizableSidebar>
         )}
 
