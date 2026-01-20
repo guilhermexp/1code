@@ -3631,27 +3631,9 @@ export function ChatView({
     return result
   }, [allSubChats, subChatFiles])
 
-  // Close preview sidebar if preview becomes unavailable
-  // BUT: Don't close immediately after opening (to avoid race condition with atom updates)
-  const justOpenedPreviewRef = useRef(false)
-  useEffect(() => {
-    if (!canOpenPreview && isPreviewSidebarOpen && !justOpenedPreviewRef.current) {
-      console.log('[Preview] Closing preview because canOpenPreview is false')
-      setIsPreviewSidebarOpen(false)
-    }
-    // Reset the flag after a short delay
-    if (justOpenedPreviewRef.current) {
-      const timer = setTimeout(() => {
-        justOpenedPreviewRef.current = false
-      }, 100)
-      return () => clearTimeout(timer)
-    }
-  }, [canOpenPreview, isPreviewSidebarOpen, setIsPreviewSidebarOpen])
-
   // Handle opening preview when URL is clicked in messages
   const handleOpenPreview = useCallback((url: string) => {
     console.log('[Preview] Opening preview with URL:', url)
-    justOpenedPreviewRef.current = true // Set flag to prevent immediate closure
     setCustomPreviewUrl(url)
     setIsPreviewSidebarOpen(true)
     console.log('[Preview] Preview sidebar opened')
