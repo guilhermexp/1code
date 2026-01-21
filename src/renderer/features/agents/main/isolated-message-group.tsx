@@ -1,6 +1,6 @@
 "use client"
 
-import { memo } from "react"
+import { memo, useMemo } from "react"
 import { useAtomValue } from "jotai"
 import {
   messageAtomFamily,
@@ -9,6 +9,7 @@ import {
   isStreamingAtom,
 } from "../stores/message-store"
 import { MemoizedAssistantMessages } from "./messages-list"
+import { extractTextMentions, TextMentionBlocks } from "../mentions/render-file-mentions"
 
 // ============================================================================
 // ISOLATED MESSAGE GROUP (LAYER 4)
@@ -41,6 +42,7 @@ interface IsolatedMessageGroupProps {
     messageId: string
     textContent: string
     imageParts: any[]
+    skipTextMentionBlocks?: boolean
   }>
   ToolCallComponent: React.ComponentType<{
     icon: any
@@ -92,17 +94,24 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   const isLastGroup = useAtomValue(isLastUserMessageAtomFamily(userMsgId))
   const isStreaming = useAtomValue(isStreamingAtom)
 
-  if (!userMsg) return null
-
   // Extract user message content
-  const textContent =
-    userMsg.parts
+  const rawTextContent =
+    userMsg?.parts
       ?.filter((p: any) => p.type === "text")
       .map((p: any) => p.text)
       .join("\n") || ""
 
   const imageParts =
-    userMsg.parts?.filter((p: any) => p.type === "data-image") || []
+    userMsg?.parts?.filter((p: any) => p.type === "data-image") || []
+
+  // Extract text mentions (quote/diff) to render separately above sticky block
+  // NOTE: useMemo must be called before any early returns to follow Rules of Hooks
+  const { textMentions, cleanedText: textContent } = useMemo(
+    () => extractTextMentions(rawTextContent),
+    [rawTextContent]
+  )
+
+  if (!userMsg) return null
 
   // Show cloning when sandbox is being set up
   const shouldShowCloning =
@@ -121,7 +130,15 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
             messageId={userMsgId}
             textContent=""
             imageParts={imageParts}
+            skipTextMentionBlocks
           />
+        </div>
+      )}
+
+      {/* Text mentions (quote/diff) - NOT sticky */}
+      {textMentions.length > 0 && (
+        <div className="mb-2 pointer-events-auto">
+          <TextMentionBlocks mentions={textMentions} />
         </div>
       )}
 
@@ -134,6 +151,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
           messageId={userMsgId}
           textContent={textContent}
           imageParts={[]}
+          skipTextMentionBlocks
         />
 
         {/* Cloning indicator */}

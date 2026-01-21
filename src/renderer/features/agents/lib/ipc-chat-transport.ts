@@ -5,6 +5,7 @@ import {
   agentsLoginModalOpenAtom,
   customClaudeConfigAtom,
   extendedThinkingEnabledAtom,
+  historyEnabledAtom,
   sessionInfoAtom,
   type CustomClaudeConfig,
   normalizeCustomClaudeConfig,
@@ -78,7 +79,7 @@ const ERROR_TOAST_CONFIG: Record<
   PROCESS_CRASH: {
     title: "Claude crashed",
     description:
-      "The Claude process exited unexpectedly. Try sending your message again.",
+      "The Claude process exited unexpectedly. Try sending your message again or rollback.",
   },
   EXECUTABLE_NOT_FOUND: {
     title: "Claude CLI not found",
@@ -143,6 +144,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     // Read extended thinking setting dynamically (so toggle applies to existing chats)
     const thinkingEnabled = appStore.get(extendedThinkingEnabledAtom)
     const maxThinkingTokens = thinkingEnabled ? 128_000 : undefined
+    const historyEnabled = appStore.get(historyEnabledAtom)
 
     // Read model selection dynamically (so model changes apply to existing chats)
     const selectedModelId = appStore.get(lastSelectedModelIdAtom)
@@ -180,6 +182,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             ...(maxThinkingTokens && { maxThinkingTokens }),
             ...(modelString && { model: modelString }),
             ...(customConfig && { customConfig }),
+            historyEnabled,
             ...(images.length > 0 && { images }),
           },
           {

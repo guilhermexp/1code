@@ -64,6 +64,10 @@ export const streamingMessageIdAtom = atom<string | null>(null)
 // Chat status atom
 export const chatStatusAtom = atom<string>("ready")
 
+// Rollback handler/state (optional) to avoid prop drilling
+export const rollbackHandlerAtom = atom<((msg: any) => void) | null>(null)
+export const isRollingBackAtom = atom<boolean>(false)
+
 // Current subChatId - used to isolate caches per chat
 export const currentSubChatIdAtom = atom<string>("default")
 
@@ -448,7 +452,8 @@ export const messageTokenDataAtom = atom((get) => {
   // Get the last message to check if its tokens changed
   const lastId = ids[ids.length - 1]
   const lastMsg = lastId ? get(messageAtomFamily(lastId)) : null
-  const lastMsgOutputTokens = (lastMsg?.metadata as any)?.usage?.outputTokens || 0
+  // Note: metadata has flat structure (metadata.outputTokens), not nested (metadata.usage.outputTokens)
+  const lastMsgOutputTokens = (lastMsg?.metadata as any)?.outputTokens || 0
 
   const cached = tokenDataCacheByChat.get(subChatId)
 
@@ -473,12 +478,15 @@ export const messageTokenDataAtom = atom((get) => {
   for (const id of ids) {
     const msg = get(messageAtomFamily(id))
     const metadata = msg?.metadata as any
-    if (metadata?.usage) {
-      inputTokens += metadata.usage.inputTokens || 0
-      outputTokens += metadata.usage.outputTokens || 0
-      cacheReadTokens += metadata.usage.cacheReadInputTokens || 0
-      cacheWriteTokens += metadata.usage.cacheCreationInputTokens || 0
-      reasoningTokens += metadata.usage.reasoningTokens || 0
+    // Note: metadata has flat structure from transform.ts (metadata.inputTokens, metadata.outputTokens)
+    // Extended fields like cacheReadInputTokens are not currently in MessageMetadata type
+    if (metadata) {
+      inputTokens += metadata.inputTokens || 0
+      outputTokens += metadata.outputTokens || 0
+      // These fields are not in current MessageMetadata but kept for future compatibility
+      cacheReadTokens += metadata.cacheReadInputTokens || 0
+      cacheWriteTokens += metadata.cacheCreationInputTokens || 0
+      reasoningTokens += metadata.reasoningTokens || 0
     }
   }
 
@@ -559,14 +567,20 @@ export const syncMessagesWithStatusAtom = atom(
   (get, set, payload: { messages: Message[]; status: string; subChatId?: string }) => {
     const { messages, status, subChatId } = payload
 
-    // Update current subChatId if provided
-    if (subChatId) {
+    // Update current subChatId if provided AND changed
+    // Avoid unnecessary set() calls - even though Jotai won't re-render for same primitive,
+    // this saves the overhead of the comparison check in subscribers
+    const prevSubChatId = get(currentSubChatIdAtom)
+    if (subChatId && subChatId !== prevSubChatId) {
       set(currentSubChatIdAtom, subChatId)
     }
-    const currentSubChatId = subChatId ?? get(currentSubChatIdAtom)
+    const currentSubChatId = subChatId ?? prevSubChatId
 
-    // Update status
-    set(chatStatusAtom, status)
+    // Update status only if changed
+    const prevStatus = get(chatStatusAtom)
+    if (status !== prevStatus) {
+      set(chatStatusAtom, status)
+    }
 
     const currentIds = get(messageIdsAtom)
     const currentRoles = get(messageRolesAtom)

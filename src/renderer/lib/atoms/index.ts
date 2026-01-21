@@ -12,6 +12,7 @@ export {
   lastSelectedModelIdAtom,
   lastSelectedAgentIdAtom,
   lastSelectedRepoAtom,
+  selectedProjectAtom,
   agentsUnseenChangesAtom,
   agentsSubChatUnseenChangesAtom,
   loadingSubChatsAtom,
@@ -184,6 +185,27 @@ export type CustomClaudeConfig = {
   baseUrl: string
 }
 
+// Model profile system - support multiple configs
+export type ModelProfile = {
+  id: string
+  name: string
+  config: CustomClaudeConfig
+  isOffline?: boolean // Mark as offline/Ollama profile
+}
+
+// Predefined offline profile for Ollama
+export const OFFLINE_PROFILE: ModelProfile = {
+  id: 'offline-ollama',
+  name: 'Offline (Ollama)',
+  isOffline: true,
+  config: {
+    model: 'qwen2.5-coder:7b',
+    token: 'ollama',
+    baseUrl: 'http://localhost:11434',
+  },
+}
+
+// Legacy single config (deprecated, kept for backwards compatibility)
 export const customClaudeConfigAtom = atomWithStorage<CustomClaudeConfig>(
   "agents:claude-custom-config",
   {
@@ -194,6 +216,49 @@ export const customClaudeConfigAtom = atomWithStorage<CustomClaudeConfig>(
   undefined,
   { getOnInit: true },
 )
+
+// New: Model profiles storage
+export const modelProfilesAtom = atomWithStorage<ModelProfile[]>(
+  "agents:model-profiles",
+  [OFFLINE_PROFILE], // Start with offline profile
+  undefined,
+  { getOnInit: true },
+)
+
+// Active profile ID (null = use Claude Code default)
+export const activeProfileIdAtom = atomWithStorage<string | null>(
+  "agents:active-profile-id",
+  null,
+  undefined,
+  { getOnInit: true },
+)
+
+// Auto-fallback to offline mode when internet is unavailable
+export const autoOfflineModeAtom = atomWithStorage<boolean>(
+  "agents:auto-offline-mode",
+  true, // Enabled by default
+  undefined,
+  { getOnInit: true },
+)
+
+// Simulate offline mode for testing (debug feature)
+export const simulateOfflineAtom = atomWithStorage<boolean>(
+  "agents:simulate-offline",
+  false, // Disabled by default
+  undefined,
+  { getOnInit: true },
+)
+
+// Show offline mode UI (debug feature - enables offline functionality visibility)
+export const showOfflineModeFeaturesAtom = atomWithStorage<boolean>(
+  "agents:show-offline-mode-features",
+  false, // Hidden by default
+  undefined,
+  { getOnInit: true },
+)
+
+// Network status (updated from main process)
+export const networkOnlineAtom = atom<boolean>(true)
 
 export function normalizeCustomClaudeConfig(
   config: CustomClaudeConfig,
@@ -206,6 +271,40 @@ export function normalizeCustomClaudeConfig(
 
   return { model, token, baseUrl }
 }
+
+// Get active config (considering network status and auto-fallback)
+export const activeConfigAtom = atom((get) => {
+  const activeProfileId = get(activeProfileIdAtom)
+  const profiles = get(modelProfilesAtom)
+  const legacyConfig = get(customClaudeConfigAtom)
+  const networkOnline = get(networkOnlineAtom)
+  const autoOffline = get(autoOfflineModeAtom)
+
+  // If auto-offline enabled and no internet, use offline profile
+  if (!networkOnline && autoOffline) {
+    const offlineProfile = profiles.find(p => p.isOffline)
+    if (offlineProfile) {
+      return offlineProfile.config
+    }
+  }
+
+  // If specific profile is selected, use it
+  if (activeProfileId) {
+    const profile = profiles.find(p => p.id === activeProfileId)
+    if (profile) {
+      return profile.config
+    }
+  }
+
+  // Fallback to legacy config if set
+  const normalized = normalizeCustomClaudeConfig(legacyConfig)
+  if (normalized) {
+    return normalized
+  }
+
+  // No custom config
+  return undefined
+})
 
 // Preferences - Language
 // Application language preference
@@ -232,11 +331,40 @@ export const extendedThinkingEnabledAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Preferences - History (Rollback)
+// When enabled, allow rollback to previous assistant messages
+export const historyEnabledAtom = atomWithStorage<boolean>(
+  "preferences:history-enabled",
+  false,
+  undefined,
+  { getOnInit: true },
+)
+
 // Preferences - Sound Notifications
 // When enabled, play a sound when agent completes work (if not viewing the chat)
 export const soundNotificationsEnabledAtom = atomWithStorage<boolean>(
   "preferences:sound-notifications-enabled",
   true,
+  undefined,
+  { getOnInit: true },
+)
+
+// Preferences - Desktop Notifications (Windows)
+// When enabled, show Windows desktop notification when agent completes work
+export const desktopNotificationsEnabledAtom = atomWithStorage<boolean>(
+  "preferences:desktop-notifications-enabled",
+  true,
+  undefined,
+  { getOnInit: true },
+)
+
+// Preferences - Windows Window Frame Style
+// When true, uses native frame (standard Windows title bar)
+// When false, uses frameless window (dark custom title bar)
+// Only applies on Windows, requires app restart to take effect
+export const useNativeFrameAtom = atomWithStorage<boolean>(
+  "preferences:windows-use-native-frame",
+  false, // Default: frameless (dark title bar)
   undefined,
   { getOnInit: true },
 )
@@ -334,6 +462,17 @@ export const systemLightThemeIdAtom = atomWithStorage<string>(
 export const systemDarkThemeIdAtom = atomWithStorage<string>(
   "preferences:system-dark-theme-id",
   "21st-dark", // Default dark theme
+  undefined,
+  { getOnInit: true },
+)
+
+/**
+ * Show workspace icon in sidebar
+ * When disabled, hides the project icon and moves loader/status indicators to the right of the name
+ */
+export const showWorkspaceIconAtom = atomWithStorage<boolean>(
+  "preferences:show-workspace-icon",
+  false, // Hidden by default
   undefined,
   { getOnInit: true },
 )
