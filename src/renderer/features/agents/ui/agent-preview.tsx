@@ -23,7 +23,6 @@ import { ScaleControl } from "./scale-control"
 import { DevicePresetsBar } from "./device-presets-bar"
 import { ResizeHandle } from "./resize-handle"
 import { MobileCopyLinkButton } from "./mobile-copy-link-button"
-import { InspectorSetupInstructions } from "./inspector-setup-instructions"
 import { DEVICE_PRESETS, AGENTS_PREVIEW_CONSTANTS } from "../constants"
 // import { getSandboxPreviewUrl } from "@/app/(alpha)/canvas/{components}/settings-tabs/repositories/preview-url"
 const getSandboxPreviewUrl = (sandboxId: string, port: number, _type: string) => `https://${sandboxId}-${port}.csb.app` // Desktop mock
@@ -347,39 +346,55 @@ export function AgentPreview({
     [device, maxWidth, setDevice],
   )
 
-  // React Grab: Handle component detection messages
-  const handleReactGrabMessage = useCallback((event: MessageEvent) => {
-    // Verify origin
+  // Inspector Mode: Handle messages from iframe
+  const handleInspectorMessage = useCallback((event: MessageEvent) => {
     if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) {
       return
     }
 
-    if (event.data?.type === "REACT_GRAB_COMPONENT") {
-      const componentInfo = event.data.data.content
+    // Handle component selection
+    if (event.data?.type === "INSPECTOR_ELEMENT_SELECTED") {
+      const { path, component } = event.data.data
 
-      // Send to chat via custom event
+      // Add to chat context
       window.dispatchEvent(
         new CustomEvent("agent-add-component-context", {
           detail: {
             chatId,
-            componentInfo
+            componentInfo: `${component} at ${path}`
           }
         })
       )
 
-      // Visual feedback
-      toast.success("Component added to context", {
-        description: "You can now ask Claude to modify this component"
+      toast.success("Element added to context", {
+        description: `${component} from ${path}`
       })
     }
   }, [chatId])
 
-
-  // React Grab: Listen for component detection messages (always active)
+  // Inspector Mode: Toggle activation via Electron IPC
   useEffect(() => {
-    window.addEventListener("message", handleReactGrabMessage as EventListener)
-    return () => window.removeEventListener("message", handleReactGrabMessage as EventListener)
-  }, [handleReactGrabMessage])
+    if (!isLoaded || !previewUrl || previewUrl === "about:blank") return
+
+    // Call Electron IPC to inject inspector into iframe
+    window.desktopApi.inspectorInject(previewUrl, inspectorEnabled).then((success: boolean) => {
+      if (success && inspectorEnabled) {
+        toast.success("Inspector Mode Active", {
+          description: "Click any element in the preview to select it"
+        })
+      } else if (!success && inspectorEnabled) {
+        toast.error("Inspector Mode Failed", {
+          description: "Could not activate inspector. Try reloading the preview."
+        })
+      }
+    })
+  }, [inspectorEnabled, isLoaded, previewUrl])
+
+  // Listen for messages
+  useEffect(() => {
+    window.addEventListener("message", handleInspectorMessage as EventListener)
+    return () => window.removeEventListener("message", handleInspectorMessage as EventListener)
+  }, [handleInspectorMessage])
 
   return (
     <div
@@ -535,13 +550,6 @@ export function AgentPreview({
               </Button>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Inspector Setup Instructions - shown when Inspector Mode is active */}
-      {!isMobile && !hideHeader && inspectorEnabled && (
-        <div className="px-3 py-2 bg-blue-50/50 dark:bg-blue-950/20 border-b">
-          <InspectorSetupInstructions />
         </div>
       )}
 

@@ -113,6 +113,10 @@ contextBridge.exposeInMainWorld("desktopApi", {
   clipboardWrite: (text: string) => ipcRenderer.invoke("clipboard:write", text),
   clipboardRead: () => ipcRenderer.invoke("clipboard:read"),
 
+  // Inspector Mode
+  inspectorInject: (iframeUrl: string, enabled: boolean) =>
+    ipcRenderer.invoke("inspector:inject", iframeUrl, enabled),
+
   // Auth methods
   getUser: () => ipcRenderer.invoke("auth:get-user"),
   isAuthenticated: () => ipcRenderer.invoke("auth:is-authenticated"),

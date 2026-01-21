@@ -130,6 +130,141 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   )
   ipcMain.handle("clipboard:read", () => clipboard.readText())
 
+  // Inspector Mode - inject script into iframe
+  ipcMain.handle("inspector:inject", async (_event, iframeUrl: string, enabled: boolean) => {
+    const { webContents } = require("electron")
+    const allContents = webContents.getAllWebContents()
+
+    // Find iframe by URL
+    const iframeContent = allContents.find((wc: any) => {
+      const url = wc.getURL()
+      return url.includes(iframeUrl) || url.startsWith(iframeUrl)
+    })
+
+    if (!iframeContent) {
+      console.warn("[Inspector] Could not find iframe with URL:", iframeUrl)
+      return false
+    }
+
+    const inspectorScript = `
+      (function() {
+        if (window.__1codeInspectorInjected) {
+          // Already injected, just toggle
+          window.__1codeInspectorActive = ${enabled};
+          if (window.__1codeInspectorToggle) window.__1codeInspectorToggle(${enabled});
+          return;
+        }
+
+        window.__1codeInspectorInjected = true;
+        window.__1codeInspectorActive = ${enabled};
+
+        let overlay = null;
+        let highlightBox = null;
+
+        function createOverlay() {
+          overlay = document.createElement('div');
+          overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:999999;cursor:crosshair;pointer-events:auto;';
+
+          highlightBox = document.createElement('div');
+          highlightBox.style.cssText = 'position:fixed;border:2px solid #3b82f6;background:rgba(59,130,246,0.1);pointer-events:none;z-index:1000000;display:none;';
+
+          document.body.appendChild(overlay);
+          document.body.appendChild(highlightBox);
+        }
+
+        function getComponentInfo(element) {
+          let fiber = null;
+          for (let key in element) {
+            if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
+              fiber = element[key];
+              break;
+            }
+          }
+
+          let componentName = 'Unknown';
+          let filePath = 'unknown';
+
+          if (fiber) {
+            let current = fiber;
+            while (current) {
+              if (current.type && typeof current.type === 'function') {
+                componentName = current.type.name || current.type.displayName || 'Component';
+                if (current._debugSource) {
+                  filePath = current._debugSource.fileName + ':' + current._debugSource.lineNumber + ':' + current._debugSource.columnNumber;
+                } else if (current.type.__source) {
+                  filePath = current.type.__source.fileName + ':' + current.type.__source.lineNumber;
+                }
+                break;
+              }
+              current = current.return;
+            }
+          }
+
+          if (componentName === 'Unknown') {
+            componentName = element.tagName.toLowerCase();
+          }
+
+          return { component: componentName, path: filePath };
+        }
+
+        function handleMouseMove(e) {
+          if (!window.__1codeInspectorActive) return;
+          const element = document.elementFromPoint(e.clientX, e.clientY);
+          if (!element || element === overlay || element === highlightBox) return;
+
+          const rect = element.getBoundingClientRect();
+          highlightBox.style.display = 'block';
+          highlightBox.style.top = rect.top + 'px';
+          highlightBox.style.left = rect.left + 'px';
+          highlightBox.style.width = rect.width + 'px';
+          highlightBox.style.height = rect.height + 'px';
+        }
+
+        function handleClick(e) {
+          if (!window.__1codeInspectorActive) return;
+          e.preventDefault();
+          e.stopPropagation();
+
+          const element = document.elementFromPoint(e.clientX, e.clientY);
+          if (!element || element === overlay || element === highlightBox) return;
+
+          const info = getComponentInfo(element);
+          window.parent.postMessage({
+            type: 'INSPECTOR_ELEMENT_SELECTED',
+            data: info
+          }, '*');
+
+          console.log('[1code Inspector] Selected:', info);
+        }
+
+        window.__1codeInspectorToggle = function(enabled) {
+          window.__1codeInspectorActive = enabled;
+          if (enabled) {
+            if (!overlay) createOverlay();
+            overlay.style.display = 'block';
+            overlay.addEventListener('mousemove', handleMouseMove);
+            overlay.addEventListener('click', handleClick);
+          } else {
+            if (overlay) overlay.style.display = 'none';
+            if (highlightBox) highlightBox.style.display = 'none';
+          }
+        };
+
+        window.__1codeInspectorToggle(${enabled});
+        console.log('[1code Inspector] Injected and active:', ${enabled});
+      })();
+    `
+
+    try {
+      await iframeContent.executeJavaScript(inspectorScript)
+      console.log("[Inspector] Script injected successfully")
+      return true
+    } catch (error) {
+      console.error("[Inspector] Failed to inject script:", error)
+      return false
+    }
+  })
+
   // Auth IPC handlers
   const validateSender = (event: Electron.IpcMainInvokeEvent): boolean => {
     const senderUrl = event.sender.getURL()
