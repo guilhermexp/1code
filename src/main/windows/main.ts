@@ -130,193 +130,212 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   )
   ipcMain.handle("clipboard:read", () => clipboard.readText())
 
-  // Inspector Mode - inject script into iframe (via main window)
-  ipcMain.handle("inspector:inject", async (event, iframeUrl: string, enabled: boolean) => {
+  // Inspector Mode - inject script into iframe (via iframe frame execution)
+  ipcMain.handle("inspector:inject", async (_event, iframeUrl: string, enabled: boolean) => {
     const win = getWindow()
     if (!win) {
       console.error("[Inspector] No window available")
       return false
     }
 
-    console.log("[Inspector] Injecting into iframe with URL:", iframeUrl, "enabled:", enabled)
+    console.log("[Inspector] Injecting React Grab into iframe with URL:", iframeUrl, "enabled:", enabled)
 
-    // Escape URL for safe string interpolation
-    const escapedUrl = iframeUrl.replace(/'/g, "\\'")
+    const targetHost = (() => {
+      try {
+        return new URL(iframeUrl).host
+      } catch {
+        return ""
+      }
+    })()
 
-    // Script that runs in MAIN WINDOW and finds + injects into iframe
+    const matchesFrame = (frameUrl: string) => {
+      if (!frameUrl) return false
+      if (frameUrl.startsWith("chrome-error://")) return false
+      if (frameUrl === iframeUrl || frameUrl.startsWith(iframeUrl)) return true
+      try {
+        const parsed = new URL(frameUrl)
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false
+        return parsed.host === targetHost
+      } catch {
+        return false
+      }
+    }
+
+    const findTargetFrame = () => {
+      const frames = win.webContents.mainFrame.frames
+      return frames.find((frame) => matchesFrame(frame.url))
+    }
+
     const inspectorScript = `
       (function() {
-        console.log('[1code Inspector] Looking for iframe with URL:', '${escapedUrl}');
+        try {
+          console.log('[1code Inspector] Running in frame:', window.location.href);
+          const enabled = ${enabled};
 
-        // Find iframe element by src
-        const iframes = document.querySelectorAll('iframe');
-        let targetIframe = null;
-
-        for (let iframe of iframes) {
-          const src = iframe.src || iframe.getAttribute('src');
-          if (src && (src.includes('${escapedUrl}') || '${escapedUrl}'.includes(src) || src.startsWith('http://localhost'))) {
-            targetIframe = iframe;
-            console.log('[1code Inspector] Found matching iframe:', src);
-            break;
-          }
-        }
-
-        if (!targetIframe) {
-          console.error('[1code Inspector] Could not find iframe. Available iframes:',
-            Array.from(iframes).map(f => f.src));
-          return false;
-        }
-
-        // Function to inject code into iframe
-        const injectCode = () => {
-          try {
-            const iframeWin = targetIframe.contentWindow;
-
-            if (!iframeWin) {
-              console.error('[1code Inspector] Cannot access iframe window');
-              return false;
+          const postError = (type, error) => {
+            try {
+              window.parent.postMessage({ type, error }, '*');
+            } catch (err) {
+              console.error('[1code Inspector] Failed to post message to parent', err);
             }
+          };
 
-            // If already injected, just toggle
-            if (iframeWin.__1codeInspectorInjected) {
-              console.log('[1code Inspector] Already injected, toggling to:', ${enabled});
-              if (iframeWin.__1codeInspectorToggle) {
-                iframeWin.__1codeInspectorToggle(${enabled});
-              }
-              return true;
+          if (window.__1codeReactGrabInjected && window.reactGrabApi) {
+            console.log('[1code Inspector] Already injected, toggling to:', enabled);
+            if (enabled) {
+              window.reactGrabApi.activate();
+            } else {
+              window.reactGrabApi.deactivate();
             }
-
-            // Create script element to inject into iframe
-            const script = targetIframe.contentDocument.createElement('script');
-            script.textContent = \`
-              window.__1codeInspectorInjected = true;
-              window.__1codeInspectorActive = ${enabled};
-
-              let overlay = null;
-              let highlightBox = null;
-
-              function createOverlay() {
-                overlay = document.createElement('div');
-                overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:999999;cursor:crosshair;pointer-events:auto;';
-
-                highlightBox = document.createElement('div');
-                highlightBox.style.cssText = 'position:fixed;border:2px solid #3b82f6;background:rgba(59,130,246,0.1);pointer-events:none;z-index:1000000;display:none;';
-
-                document.body.appendChild(overlay);
-                document.body.appendChild(highlightBox);
-              }
-
-              function getComponentInfo(element) {
-                let fiber = null;
-                for (let key in element) {
-                  if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
-                    fiber = element[key];
-                    break;
-                  }
-                }
-
-                let componentName = 'Unknown';
-                let filePath = 'unknown';
-
-                if (fiber) {
-                  let current = fiber;
-                  while (current) {
-                    if (current.type && typeof current.type === 'function') {
-                      componentName = current.type.name || current.type.displayName || 'Component';
-                      if (current._debugSource) {
-                        filePath = current._debugSource.fileName + ':' + current._debugSource.lineNumber + ':' + current._debugSource.columnNumber;
-                      } else if (current.type.__source) {
-                        filePath = current.type.__source.fileName + ':' + current.type.__source.lineNumber;
-                      }
-                      break;
-                    }
-                    current = current.return;
-                  }
-                }
-
-                if (componentName === 'Unknown') {
-                  componentName = element.tagName.toLowerCase();
-                }
-
-                return { component: componentName, path: filePath };
-              }
-
-              function handleMouseMove(e) {
-                if (!window.__1codeInspectorActive) return;
-                const element = document.elementFromPoint(e.clientX, e.clientY);
-                if (!element || element === overlay || element === highlightBox) return;
-
-                const rect = element.getBoundingClientRect();
-                highlightBox.style.display = 'block';
-                highlightBox.style.top = rect.top + 'px';
-                highlightBox.style.left = rect.left + 'px';
-                highlightBox.style.width = rect.width + 'px';
-                highlightBox.style.height = rect.height + 'px';
-              }
-
-              function handleClick(e) {
-                if (!window.__1codeInspectorActive) return;
-                e.preventDefault();
-                e.stopPropagation();
-
-                const element = document.elementFromPoint(e.clientX, e.clientY);
-                if (!element || element === overlay || element === highlightBox) return;
-
-                const info = getComponentInfo(element);
-                window.parent.postMessage({
-                  type: 'INSPECTOR_ELEMENT_SELECTED',
-                  data: info
-                }, '*');
-
-                console.log('[1code Inspector] Selected:', info);
-              }
-
-              window.__1codeInspectorToggle = function(enabled) {
-                window.__1codeInspectorActive = enabled;
-                if (enabled) {
-                  if (!overlay) createOverlay();
-                  overlay.style.display = 'block';
-                  overlay.addEventListener('mousemove', handleMouseMove);
-                  overlay.addEventListener('click', handleClick);
-                  console.log('[1code Inspector] Activated');
-                } else {
-                  if (overlay) overlay.style.display = 'none';
-                  if (highlightBox) highlightBox.style.display = 'none';
-                  console.log('[1code Inspector] Deactivated');
-                }
-              };
-
-              window.__1codeInspectorToggle(${enabled});
-            \`;
-
-            targetIframe.contentDocument.head.appendChild(script);
-            console.log('[1code Inspector] Code injected into iframe');
             return true;
-
-          } catch (err) {
-            console.error('[1code Inspector] Error injecting code:', err);
-            return false;
           }
-        };
 
-        // Try to inject immediately, or wait for load
-        if (targetIframe.contentDocument && targetIframe.contentDocument.readyState === 'complete') {
-          return injectCode();
-        } else {
-          targetIframe.addEventListener('load', injectCode);
-          return true; // Will inject on load
+          if (window.__1codeReactGrabInjected && !window.reactGrabApi) {
+            console.warn('[1code Inspector] Marker set but API missing; reinitializing.');
+            window.__1codeReactGrabInjected = false;
+          }
+
+          const ensureHead = () =>
+            document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+
+          const insertStyles = () => {
+            const href = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/styles.css';
+            if (!document.querySelector('link[rel="stylesheet"][href*="react-grab"]')) {
+              const styleLink = document.createElement('link');
+              styleLink.rel = 'stylesheet';
+              styleLink.href = href;
+              styleLink.onload = () => console.log('[1code Inspector] CSS loaded');
+              styleLink.onerror = (e) => console.error('[1code Inspector] CSS failed to load', e);
+              ensureHead().appendChild(styleLink);
+            }
+          };
+
+          const initReactGrab = () => {
+            let attempts = 0;
+            const checkReactGrab = () => {
+              attempts += 1;
+              if (window.ReactGrab) {
+                console.log('[1code Inspector] ReactGrab found, initializing');
+                try {
+                  const handleCopySuccess = (elements, content) => {
+                    console.log('[1code Inspector] Component selected:', content);
+                    window.parent.postMessage({
+                      type: 'INSPECTOR_ELEMENT_SELECTED',
+                      data: { content, elements }
+                    }, '*');
+                  };
+
+                  window.reactGrabApi = window.ReactGrab.init({
+                    onElementSelect: (element) => {
+                      try {
+                        if (window.reactGrabApi && typeof window.reactGrabApi.copyElement === 'function') {
+                          window.reactGrabApi.copyElement(element);
+                        }
+                      } catch (error) {
+                        console.error('[1code Inspector] Failed to copy selected element', error);
+                      }
+                    },
+                    onCopySuccess: handleCopySuccess
+                  });
+
+                  const registerPluginTarget =
+                    window.reactGrabApi && typeof window.reactGrabApi.registerPlugin === 'function'
+                      ? window.reactGrabApi
+                      : window.ReactGrab && typeof window.ReactGrab.registerPlugin === 'function'
+                        ? window.ReactGrab
+                        : null
+
+                  if (registerPluginTarget) {
+                    registerPluginTarget.registerPlugin({
+                      name: '1code-integration',
+                      hooks: {
+                        onCopySuccess: handleCopySuccess
+                      }
+                    });
+                  }
+
+                  if (enabled && window.reactGrabApi && typeof window.reactGrabApi.activate === 'function') {
+                    window.reactGrabApi.activate();
+                  }
+
+                  window.__1codeReactGrabInjected = true;
+                  return;
+                } catch (error) {
+                  console.error('[1code Inspector] Failed to initialize', error);
+                  postError('INSPECTOR_INIT_ERROR', error && error.message ? error.message : String(error));
+                  return;
+                }
+              }
+
+              if (attempts < 50) {
+                setTimeout(checkReactGrab, 100);
+              } else {
+                console.error('[1code Inspector] ReactGrab not found after 5s');
+                postError('INSPECTOR_INIT_ERROR', 'ReactGrab not found on window');
+              }
+            };
+
+            checkReactGrab();
+          };
+
+          const loadScript = () => {
+            const src = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/index.global.js';
+            if (document.querySelector('script[src*="react-grab"]')) {
+              console.log('[1code Inspector] Script already present');
+              initReactGrab();
+              return;
+            }
+            const script = document.createElement('script');
+            script.src = src;
+            script.crossOrigin = 'anonymous';
+            script.async = true;
+            script.onload = () => {
+              console.log('[1code Inspector] Script loaded');
+              initReactGrab();
+            };
+            script.onerror = (error) => {
+              console.error('[1code Inspector] Failed to load React Grab', error);
+              postError('INSPECTOR_LOAD_ERROR', 'Failed to load React Grab script');
+            };
+            ensureHead().appendChild(script);
+          };
+
+          insertStyles();
+          loadScript();
+          return true;
+        } catch (err) {
+          console.error('[1code Inspector] Error injecting React Grab', err);
+          return false;
         }
       })();
     `
 
-    try {
-      const result = await win.webContents.executeJavaScript(inspectorScript)
-      console.log("[Inspector] Script execution result:", result)
-      return result !== false
-    } catch (error) {
-      console.error("[Inspector] Failed to execute script:", error)
-      return false
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    const maxAttempts = 50
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const targetFrame = findTargetFrame()
+
+      if (!targetFrame) {
+        await delay(100)
+        continue
+      }
+
+      try {
+        const result = await targetFrame.executeJavaScript(inspectorScript, true)
+        console.log("[Inspector] Script execution result:", result)
+        return result !== false
+      } catch (error) {
+        console.error("[Inspector] Failed to execute script in frame:", error)
+        return false
+      }
     }
+
+    const frameUrls = win.webContents.mainFrame.frames
+      .map((frame) => frame.url)
+      .filter(Boolean)
+    console.error("[Inspector] Could not find target iframe frame. Available frames:", frameUrls)
+    return false
   })
 
   // Auth IPC handlers
@@ -467,20 +486,80 @@ export function createMainWindow(): BrowserWindow {
   ses.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = { ...details.responseHeaders }
 
+    // Log CSP modifications for debugging
+    const isLocalhost = details.url.includes('localhost') || details.url.includes('127.0.0.1')
+
     // Allow loading localhost in iframes and jsdelivr CDN by modifying CSP
     if (responseHeaders["content-security-policy"]) {
+      const originalCSP = responseHeaders["content-security-policy"]
       responseHeaders["content-security-policy"] = responseHeaders[
         "content-security-policy"
       ].map((csp: string) => {
-        // Add localhost to frame-src and child-src directives, plus jsdelivr for react-grab
-        if (csp.includes("default-src")) {
-          return csp.replace(
-            /default-src ([^;]*)/,
-            "default-src $1; frame-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; child-src 'self' http://localhost:* http://127.0.0.1:*; script-src-elem 'self' https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net"
-          )
+        const addSources = (
+          currentCsp: string,
+          directive: string,
+          sources: string[]
+        ) => {
+          const pattern = new RegExp(`${directive} ([^;]*)`)
+          if (pattern.test(currentCsp)) {
+            return currentCsp.replace(pattern, (_match, existing) => {
+              const missing = sources.filter((source) => !existing.includes(source))
+              if (missing.length === 0) return `${directive} ${existing}`
+              return `${directive} ${existing} ${missing.join(" ")}`
+            })
+          }
+          return `${currentCsp}; ${directive} ${sources.join(" ")}`
         }
-        return csp
+
+        let modifiedCSP = csp
+        modifiedCSP = addSources(modifiedCSP, "frame-src", [
+          "'self'",
+          "http://localhost:*",
+          "http://127.0.0.1:*",
+          "ws://localhost:*",
+          "ws://127.0.0.1:*"
+        ])
+        modifiedCSP = addSources(modifiedCSP, "child-src", [
+          "'self'",
+          "http://localhost:*",
+          "http://127.0.0.1:*"
+        ])
+        modifiedCSP = addSources(modifiedCSP, "script-src-elem", [
+          "'self'",
+          "https://cdn.jsdelivr.net",
+          "https://unpkg.com"
+        ])
+        modifiedCSP = addSources(modifiedCSP, "script-src", [
+          "'self'",
+          "https://cdn.jsdelivr.net",
+          "https://unpkg.com"
+        ])
+        modifiedCSP = addSources(modifiedCSP, "connect-src", [
+          "'self'",
+          "https://cdn.jsdelivr.net",
+          "https://unpkg.com"
+        ])
+        modifiedCSP = addSources(modifiedCSP, "style-src", [
+          "'self'",
+          "'unsafe-inline'",
+          "https://cdn.jsdelivr.net",
+          "https://unpkg.com"
+        ])
+
+        if (modifiedCSP !== csp) {
+          console.log(`[CSP] Modified CSP for ${details.url}`)
+          console.log(`[CSP] Original:`, originalCSP)
+          console.log(`[CSP] Modified:`, modifiedCSP)
+        }
+
+        return modifiedCSP
       })
+    } else if (isLocalhost) {
+      // If localhost has no CSP, inject a permissive one for Inspector Mode
+      console.log(`[CSP] No CSP found for localhost ${details.url}, injecting permissive CSP`)
+      responseHeaders["content-security-policy"] = [
+        "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; connect-src *"
+      ]
     }
 
     callback({ responseHeaders })

@@ -230,7 +230,7 @@ export const agentsPreviewSidebarWidthAtom = atomWithStorage<number>(
 
 export const agentsPreviewSidebarOpenAtom = atomWithStorage<boolean>(
   "agents-preview-sidebar-open",
-  true,
+  false,
   undefined,
   { getOnInit: true },
 )

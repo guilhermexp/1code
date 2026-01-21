@@ -334,7 +334,7 @@ function formatToolName(toolName: string): string {
 }
 
 // Create SVG icon element in DOM based on file extension or type
-export function createFileIconElement(filename: string, type?: "file" | "folder" | "skill" | "agent" | "category" | "tool"): SVGSVGElement {
+export function createFileIconElement(filename: string, type?: "file" | "folder" | "skill" | "agent" | "category" | "tool" | "component"): SVGSVGElement {
   const IconComponent = type === "skill"
     ? SkillIcon
     : type === "agent"
@@ -1313,4 +1313,3 @@ export const AgentsFileMention = memo(function AgentsFileMention({
     </TooltipProvider>
   )
 })
-

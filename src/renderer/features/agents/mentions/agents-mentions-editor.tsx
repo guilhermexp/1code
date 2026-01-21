@@ -23,7 +23,7 @@ export interface FileMentionOption {
   truncatedPath?: string // directory path for inline display or skill description
   additions?: number // for changed files
   deletions?: number // for changed files
-  type?: "file" | "folder" | "skill" | "agent" | "category" | "tool" // entry type (default: file)
+  type?: "file" | "folder" | "skill" | "agent" | "category" | "tool" | "component" // entry type (default: file)
   // Extended data for rich tooltips (skills/agents/tools)
   description?: string // skill/agent/tool description
   tools?: string[] // agent allowed tools
@@ -39,6 +39,7 @@ export const MENTION_PREFIXES = {
   SKILL: "skill:",
   AGENT: "agent:",
   TOOL: "tool:", // MCP tools
+  COMPONENT: "component:",
 } as const
 
 type TriggerPayload = {
@@ -53,6 +54,7 @@ export type AgentsMentionsEditorHandle = {
   focus: () => void
   blur: () => void
   insertMention: (option: FileMentionOption) => void
+  insertMentionAtCursor: (option: FileMentionOption) => void
   getValue: () => string
   setValue: (value: string) => void
   clear: () => void
@@ -95,7 +97,11 @@ function createMentionNode(option: FileMentionOption): HTMLSpanElement {
     "inline-flex items-center gap-1 px-[6px] py-[1px] rounded-[4px] text-sm align-middle bg-black/[0.04] dark:bg-white/[0.08] text-foreground/80 [&.mention-selected]:bg-primary/70 [&.mention-selected]:text-primary-foreground"
 
   // Create icon element (pass type for folder icon)
-  const iconElement = createFileIconElement(option.label, option.type)
+  const iconLabel =
+    option.type === "component" && option.path
+      ? option.path.split("/").pop() || option.label
+      : option.label
+  const iconElement = createFileIconElement(iconLabel, option.type)
   span.appendChild(iconElement)
 
   const label = document.createElement("span")
@@ -524,6 +530,18 @@ export const AgentsMentionsEditor = memo(
               const path = parts.slice(2).join(":")
               const name = path.split("/").pop() || path
               return { id, label: name, path, repository: repo, type }
+            }
+          }
+          if (id.startsWith(MENTION_PREFIXES.COMPONENT)) {
+            const parts = id.split(":")
+            if (parts.length >= 5) {
+              const name = decodeURIComponent(parts[1] || "")
+              const path = decodeURIComponent(parts.slice(2, -2).join(":"))
+              const line = parts[parts.length - 2]
+              const column = parts[parts.length - 1]
+              const fileName = path.split("/").pop() || path || "component"
+              const label = `${fileName} ${line}:${column}`.trim()
+              return { id, label, path, repository: "", type: "component", truncatedPath: name }
             }
           }
           if (id.startsWith(MENTION_PREFIXES.SKILL)) {
@@ -1056,6 +1074,48 @@ export const AgentsMentionsEditor = memo(
             triggerActive.current = false
             triggerStartIndex.current = null
             onCloseTrigger()
+          },
+
+          insertMentionAtCursor: (option: FileMentionOption) => {
+            if (!editorRef.current) return
+
+            const editor = editorRef.current
+            const sel = window.getSelection()
+            const mentionNode = createMentionNode(option)
+            const space = document.createTextNode(" ")
+
+            if (!sel || sel.rangeCount === 0) {
+              editor.appendChild(mentionNode)
+              editor.appendChild(space)
+              setHasContent(true)
+              onContentChange?.(true)
+              return
+            }
+
+            let range = sel.getRangeAt(0)
+            const isInEditor = editor.contains(
+              range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+                ? range.commonAncestorContainer
+                : range.commonAncestorContainer.parentElement,
+            )
+
+            if (!isInEditor) {
+              range = document.createRange()
+              range.selectNodeContents(editor)
+              range.collapse(false)
+            }
+
+            range.insertNode(space)
+            range.insertNode(mentionNode)
+
+            const newRange = document.createRange()
+            newRange.setStartAfter(space)
+            newRange.collapse(true)
+            sel.removeAllRanges()
+            sel.addRange(newRange)
+
+            setHasContent(true)
+            onContentChange?.(true)
           },
         }),
         [onCloseTrigger, onCloseSlashTrigger, resolveMention, onContentChange],

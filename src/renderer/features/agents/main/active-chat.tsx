@@ -1851,24 +1851,57 @@ function ChatViewInner({
     }
   }, [pendingPrMessage, isStreaming, sendMessage, setPendingPrMessage])
 
+  const stripComponentMentions = useCallback((value: string) => {
+    return value
+      .replace(/@\\[component:[^\\]]+\\]/g, "")
+      .replace(/\\s{2,}/g, " ")
+      .trim()
+  }, [])
+
   // React Grab: Handle component context from Inspector Mode
   useEffect(() => {
     const handleAddComponentContext = (e: CustomEvent) => {
       const { chatId: eventChatId, componentInfo } = e.detail
 
       // Only process if this is the active chat
-      if (eventChatId !== parentChatId) {
+      if (eventChatId !== parentChatId && eventChatId !== subChatId) {
         return
       }
 
       // Add component info to text contexts
       // Use a special sourceMessageId to identify component inspector contexts
       addTextContext(componentInfo, "component-inspector")
+
+      // Add a visual chip to the input for quick reference
+      const match = componentInfo.match(/in (.+?) at (.+?):(\\d+):(\\d+)/s)
+      const componentName = match?.[1] || "Component"
+      const filePath = match?.[2] || ""
+      const line = match?.[3] || ""
+      const column = match?.[4] || ""
+      const fileName = filePath.split("/").pop() || filePath || "component"
+      const label =
+        line && column ? `${fileName} ${line}:${column}` : fileName
+
+      const mentionId = `component:${encodeURIComponent(componentName)}:${encodeURIComponent(
+        filePath,
+      )}:${line || "0"}:${column || "0"}`
+
+      editorRef.current?.focus()
+      requestAnimationFrame(() => {
+        editorRef.current?.insertMentionAtCursor({
+          id: mentionId,
+          label,
+          path: filePath,
+          repository: "",
+          type: "component",
+          truncatedPath: componentName,
+        })
+      })
     }
 
     window.addEventListener("agent-add-component-context", handleAddComponentContext as EventListener)
     return () => window.removeEventListener("agent-add-component-context", handleAddComponentContext as EventListener)
-  }, [parentChatId, addTextContext])
+  }, [parentChatId, subChatId, addTextContext])
 
   // Watch for pending Review message and send it
   const [pendingReviewMessage, setPendingReviewMessage] = useAtom(
@@ -2525,7 +2558,8 @@ function ChatViewInner({
 
     // Get value from uncontrolled editor
     const inputValue = editorRef.current?.getValue() || ""
-    const hasText = inputValue.trim().length > 0
+    const cleanedInputValue = stripComponentMentions(inputValue)
+    const hasText = cleanedInputValue.trim().length > 0
     const currentImages = imagesRef.current
     const currentFiles = filesRef.current
     const currentTextContexts = textContextsRef.current
@@ -2547,7 +2581,7 @@ function ChatViewInner({
 
       const item = createQueueItem(
         generateQueueId(),
-        inputValue.trim(),
+        cleanedInputValue.trim(),
         queuedImages.length > 0 ? queuedImages : undefined,
         queuedFiles.length > 0 ? queuedFiles : undefined,
         queuedTextContexts.length > 0 ? queuedTextContexts : undefined
@@ -2569,7 +2603,7 @@ function ChatViewInner({
       onRestoreWorkspace()
     }
 
-    const text = inputValue.trim()
+    const text = cleanedInputValue.trim()
     // Clear editor and draft from localStorage
     editorRef.current?.clear()
     if (parentChatId) {
@@ -2692,6 +2726,7 @@ function ChatViewInner({
     clearTextContexts,
     teamId,
     addToQueue,
+    stripComponentMentions,
   ])
 
   // Queue handlers for sending queued messages

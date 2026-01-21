@@ -73,6 +73,7 @@ export function AgentPreview({
 
   // Inspector Mode state for React Grab integration
   const [inspectorEnabled, setInspectorEnabled] = useState(false)
+  const lastInspectorClipboardRef = useRef<string>("")
 
   // Dual state architecture:
   // - loadedPath: Controls iframe src (stable, only changes on manual navigation)
@@ -348,39 +349,84 @@ export function AgentPreview({
 
   // Inspector Mode: Handle messages from iframe
   const handleInspectorMessage = useCallback((event: MessageEvent) => {
-    if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) {
+    const iframeWindow = iframeRef.current?.contentWindow
+    const isFromIframe = Boolean(iframeWindow && event.source === iframeWindow)
+    const isInspectorEvent =
+      event.data?.type &&
+      typeof event.data.type === "string" &&
+      event.data.type.startsWith("INSPECTOR_")
+    const isTrustedOrigin =
+      event.origin === "null" ||
+      event.origin.includes("http://localhost") ||
+      event.origin.includes("http://127.0.0.1")
+
+    if (!isFromIframe && !isInspectorEvent) {
       return
     }
 
-    // Handle component selection
+    // Handle component selection from React Grab
     if (event.data?.type === "INSPECTOR_ELEMENT_SELECTED") {
-      const { path, component } = event.data.data
+      if (!isFromIframe && !isTrustedOrigin) {
+        return
+      }
+      const { content } = event.data.data
+
+      // React Grab content format:
+      // <HTML>
+      // in ComponentName at path/to/file.tsx:line:col
+
+      // Extract component name and path from content
+      const match = content.match(/in (\w+) at (.+):(\d+):(\d+)/)
+      const componentName = match?.[1] || "Component"
+      const filePath = match?.[2] || "unknown"
 
       // Add to chat context
       window.dispatchEvent(
         new CustomEvent("agent-add-component-context", {
           detail: {
             chatId,
-            componentInfo: `${component} at ${path}`
+            componentInfo: content // Send full content with HTML + component info
           }
         })
       )
 
-      toast.success("Element added to context", {
-        description: `${component} from ${path}`
+      toast.success("Component added to context", {
+        description: `${componentName} from ${filePath}`
       })
     }
-  }, [chatId])
+
+    // Handle initialization errors
+    if (event.data?.type === "INSPECTOR_INIT_ERROR") {
+      const error = event.data.error
+      console.error("[Preview] Inspector init error:", error)
+      toast.error("Inspector Mode Failed", {
+        description: `Error: ${error}. Check console for details.`
+      })
+      setInspectorEnabled(false) // Desativar automaticamente
+    }
+
+    // Handle script load errors
+    if (event.data?.type === "INSPECTOR_LOAD_ERROR") {
+      const error = event.data.error
+      console.error("[Preview] Inspector load error:", error)
+      toast.error("Inspector Mode Failed", {
+        description: "Could not load React Grab. Check your internet connection."
+      })
+      setInspectorEnabled(false) // Desativar automaticamente
+    }
+  }, [chatId, setInspectorEnabled])
 
   // Inspector Mode: Toggle activation via Electron IPC
   useEffect(() => {
     if (!isLoaded || !previewUrl || previewUrl === "about:blank") return
 
-    // Call Electron IPC to inject inspector into iframe
+    // Call Electron IPC to inject React Grab into iframe
     window.desktopApi.inspectorInject(previewUrl, inspectorEnabled).then((success: boolean) => {
       if (success && inspectorEnabled) {
+        const isMac = window.desktopApi.platform === "darwin"
+        const shortcut = isMac ? "⌘C" : "Ctrl+C"
         toast.success("Inspector Mode Active", {
-          description: "Click any element in the preview to select it"
+          description: `Hover over any element and press ${shortcut} to select it`
         })
       } else if (!success && inspectorEnabled) {
         toast.error("Inspector Mode Failed", {
@@ -389,6 +435,43 @@ export function AgentPreview({
       }
     })
   }, [inspectorEnabled, isLoaded, previewUrl])
+
+  // Inspector Mode: Clipboard fallback (React Grab copies to clipboard on select)
+  useEffect(() => {
+    if (!inspectorEnabled || !window.desktopApi?.clipboardRead) return
+
+    let isActive = true
+    const pollInterval = 500
+
+    const pollClipboard = async () => {
+      try {
+        const text = await window.desktopApi.clipboardRead()
+        if (!isActive || !text || text === lastInspectorClipboardRef.current) return
+
+        const hasSignature = /in .+ at .+:\d+:\d+/.test(text) || text.includes("<HTML>")
+        if (!hasSignature) return
+
+        lastInspectorClipboardRef.current = text
+
+        window.dispatchEvent(
+          new CustomEvent("agent-add-component-context", {
+            detail: {
+              chatId,
+              componentInfo: text,
+            },
+          }),
+        )
+      } catch {
+        // Ignore clipboard polling errors
+      }
+    }
+
+    const intervalId = window.setInterval(pollClipboard, pollInterval)
+    return () => {
+      isActive = false
+      window.clearInterval(intervalId)
+    }
+  }, [inspectorEnabled, chatId])
 
   // Listen for messages
   useEffect(() => {
