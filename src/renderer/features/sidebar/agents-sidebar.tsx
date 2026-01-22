@@ -12,7 +12,6 @@ import {
   agentsSettingsDialogActiveTabAtom,
   agentsSettingsDialogOpenAtom,
   agentsHelpPopoverOpenAtom,
-  agentsShortcutsDialogOpenAtom,
   selectedAgentChatIdsAtom,
   isAgentMultiSelectModeAtom,
   toggleAgentChatSelectionAtom,
@@ -73,6 +72,7 @@ import {
   ArchiveIcon,
   TrashIcon,
   QuestionCircleIcon,
+  QuestionIcon,
   KeyboardIcon,
   TicketIcon,
 } from "../../components/ui/icons"
@@ -90,6 +90,7 @@ import {
   selectedProjectAtom,
   justCreatedIdsAtom,
   undoStackAtom,
+  pendingUserQuestionsAtom,
   type UndoItem,
 } from "../agents/atoms"
 import { NetworkStatus } from "../../components/ui/network-status"
@@ -117,6 +118,7 @@ const ChatIcon = React.memo(function ChatIcon({
   isLoading,
   hasUnseenChanges = false,
   hasPendingPlan = false,
+  hasPendingQuestion = false,
   isMultiSelectMode = false,
   isChecked = false,
   onCheckboxClick,
@@ -128,6 +130,7 @@ const ChatIcon = React.memo(function ChatIcon({
   isLoading: boolean
   hasUnseenChanges?: boolean
   hasPendingPlan?: boolean
+  hasPendingQuestion?: boolean
   isMultiSelectMode?: boolean
   isChecked?: boolean
   onCheckboxClick?: (e: React.MouseEvent) => void
@@ -191,26 +194,67 @@ const ChatIcon = React.memo(function ChatIcon({
       >
         {renderMainIcon()}
       </div>
-      {/* Badge in bottom-right corner: loader → amber dot → blue dot - hidden during multi-select or when icon is hidden */}
-      {(isLoading || hasUnseenChanges || hasPendingPlan) && !isMultiSelectMode && showIcon && (
-        <div
-          className={cn(
-            "absolute -bottom-1 -right-1 w-3 h-3 rounded-full flex items-center justify-center",
-            isSelected
-              ? "bg-[#E8E8E8] dark:bg-[#1B1B1B]"
-              : "bg-[#F4F4F4] group-hover:bg-[#E8E8E8] dark:bg-[#101010] dark:group-hover:bg-[#1B1B1B]",
-          )}
-        >
-          {/* Priority: loader > amber dot (pending plan) > blue dot (unseen) */}
-          {isLoading ? (
-            <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-muted-foreground" />
-          ) : hasPendingPlan ? (
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-          ) : (
-            <LoadingDot isLoading={false} className="w-2.5 h-2.5 text-muted-foreground" />
-          )}
-        </div>
-      )}
+      {/* Badge in bottom-right corner: question > loader > amber dot > blue dot - hidden during multi-select or when icon is hidden */}
+      <AnimatePresence mode="wait">
+        {(hasPendingQuestion || isLoading || hasUnseenChanges || hasPendingPlan) && !isMultiSelectMode && showIcon && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            transition={{ duration: 0.15 }}
+            className={cn(
+              "absolute -bottom-1 -right-1 w-3 h-3 rounded-full flex items-center justify-center",
+              isSelected
+                ? "bg-[#E8E8E8] dark:bg-[#1B1B1B]"
+                : "bg-[#F4F4F4] group-hover:bg-[#E8E8E8] dark:bg-[#101010] dark:group-hover:bg-[#1B1B1B]",
+            )}
+          >
+            {/* Priority: question > loader > amber dot (pending plan) > blue dot (unseen) */}
+            <AnimatePresence mode="wait">
+              {hasPendingQuestion ? (
+                <motion.div
+                  key="question"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <QuestionIcon className="w-2.5 h-2.5 text-blue-500" />
+                </motion.div>
+              ) : isLoading ? (
+                <motion.div
+                  key="loading"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-muted-foreground" />
+                </motion.div>
+              ) : hasPendingPlan ? (
+                <motion.div
+                  key="plan"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.15 }}
+                  className="w-1.5 h-1.5 rounded-full bg-amber-500"
+                />
+              ) : (
+                <motion.div
+                  key="unseen"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <LoadingDot isLoading={false} className="w-2.5 h-2.5 text-muted-foreground" />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 })
@@ -329,6 +373,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
   isLoading,
   hasUnseenChanges,
   hasPendingPlan,
+  hasPendingQuestion,
   isMultiSelectMode,
   isChecked,
   isFocused,
@@ -374,6 +419,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
   isLoading: boolean
   hasUnseenChanges: boolean
   hasPendingPlan: boolean
+  hasPendingQuestion: boolean
   isMultiSelectMode: boolean
   isChecked: boolean
   isFocused: boolean
@@ -469,6 +515,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
                   isLoading={isLoading}
                   hasUnseenChanges={hasUnseenChanges}
                   hasPendingPlan={hasPendingPlan}
+                  hasPendingQuestion={hasPendingQuestion}
                   isMultiSelectMode={isMultiSelectMode}
                   isChecked={isChecked}
                   onCheckboxClick={(e) => onCheckboxClick(e, chatId)}
@@ -496,15 +543,50 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 {!isMultiSelectMode && !isMobileFullscreen && (
                   <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center relative">
                     {/* Inline loader/status when icon is hidden - always visible, hides on hover */}
-                    {!showIcon && (isLoading || hasUnseenChanges || hasPendingPlan) && (
+                    {!showIcon && (hasPendingQuestion || isLoading || hasUnseenChanges || hasPendingPlan) && (
                       <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0">
-                        {isLoading ? (
-                          <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-muted-foreground" />
-                        ) : hasPendingPlan ? (
-                          <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                        ) : (
-                          <LoadingDot isLoading={false} className="w-2.5 h-2.5 text-muted-foreground" />
-                        )}
+                        <AnimatePresence mode="wait">
+                          {hasPendingQuestion ? (
+                            <motion.div
+                              key="question"
+                              initial={{ opacity: 0, scale: 0.5 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.5 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <QuestionIcon className="w-2.5 h-2.5 text-blue-500" />
+                            </motion.div>
+                          ) : isLoading ? (
+                            <motion.div
+                              key="loading"
+                              initial={{ opacity: 0, scale: 0.5 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.5 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-muted-foreground" />
+                            </motion.div>
+                          ) : hasPendingPlan ? (
+                            <motion.div
+                              key="plan"
+                              initial={{ opacity: 0, scale: 0.5 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.5 }}
+                              transition={{ duration: 0.15 }}
+                              className="w-1.5 h-1.5 rounded-full bg-amber-500"
+                            />
+                          ) : (
+                            <motion.div
+                              key="unseen"
+                              initial={{ opacity: 0, scale: 0.5 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.5 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <LoadingDot isLoading={false} className="w-2.5 h-2.5 text-muted-foreground" />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     )}
                     {/* Archive button - appears on hover */}
@@ -631,6 +713,7 @@ function chatListSectionPropsAreEqual(
   if (prevProps.loadingChatIds !== nextProps.loadingChatIds) return false
   if (prevProps.unseenChanges !== nextProps.unseenChanges) return false
   if (prevProps.workspacePendingPlans !== nextProps.workspacePendingPlans) return false
+  if (prevProps.workspacePendingQuestions !== nextProps.workspacePendingQuestions) return false
   if (prevProps.selectedChatIds !== nextProps.selectedChatIds) return false
   if (prevProps.pinnedChatIds !== nextProps.pinnedChatIds) return false
   if (prevProps.justCreatedIds !== nextProps.justCreatedIds) return false
@@ -659,6 +742,7 @@ interface ChatListSectionProps {
   loadingChatIds: Set<string>
   unseenChanges: Set<string>
   workspacePendingPlans: Set<string>
+  workspacePendingQuestions: Set<string>
   isMultiSelectMode: boolean
   selectedChatIds: Set<string>
   isMobileFullscreen: boolean
@@ -699,6 +783,7 @@ const ChatListSection = React.memo(function ChatListSection({
   loadingChatIds,
   unseenChanges,
   workspacePendingPlans,
+  workspacePendingQuestions,
   isMultiSelectMode,
   selectedChatIds,
   isMobileFullscreen,
@@ -767,6 +852,7 @@ const ChatListSection = React.memo(function ChatListSection({
           const isChecked = selectedChatIds.has(chat.id)
           const stats = workspaceFileStats.get(chat.id)
           const hasPendingPlan = workspacePendingPlans.has(chat.id)
+          const hasPendingQuestion = workspacePendingQuestions.has(chat.id)
           const isLastInFilteredChats = globalIndex === filteredChats.length - 1
           const isJustCreated = justCreatedIds.has(chat.id)
 
@@ -783,6 +869,7 @@ const ChatListSection = React.memo(function ChatListSection({
               isLoading={isLoading}
               hasUnseenChanges={unseenChanges.has(chat.id)}
               hasPendingPlan={hasPendingPlan}
+              hasPendingQuestion={hasPendingQuestion}
               isMultiSelectMode={isMultiSelectMode}
               isChecked={isChecked}
               isFocused={isFocused}
@@ -906,7 +993,6 @@ interface SidebarHeaderProps {
   onToggleSidebar?: () => void
   setSettingsDialogOpen: (open: boolean) => void
   setSettingsActiveTab: (tab: string) => void
-  setShortcutsDialogOpen: (open: boolean) => void
   setShowAuthDialog: (open: boolean) => void
   handleSidebarMouseEnter: () => void
   handleSidebarMouseLeave: () => void
@@ -923,7 +1009,6 @@ const SidebarHeader = memo(function SidebarHeader({
   onToggleSidebar,
   setSettingsDialogOpen,
   setSettingsActiveTab,
-  setShortcutsDialogOpen,
   setShowAuthDialog,
   handleSidebarMouseEnter,
   handleSidebarMouseLeave,
@@ -1103,7 +1188,8 @@ const SidebarHeader = memo(function SidebarHeader({
                           <DropdownMenuItem
                             onSelect={() => {
                               setIsDropdownOpen(false)
-                              setShortcutsDialogOpen(true)
+                              setSettingsActiveTab("keyboard")
+                              setSettingsDialogOpen(true)
                             }}
                             className="gap-2"
                           >
@@ -1203,7 +1289,8 @@ const SidebarHeader = memo(function SidebarHeader({
                           <DropdownMenuItem
                             onSelect={() => {
                               setIsDropdownOpen(false)
-                              setShortcutsDialogOpen(true)
+                              setSettingsActiveTab("keyboard")
+                              setSettingsDialogOpen(true)
                             }}
                             className="gap-2"
                           >
@@ -1293,6 +1380,7 @@ export function AgentsSidebar({
   const previousChatId = useAtomValue(previousAgentChatIdAtom)
   const [selectedDraftId, setSelectedDraftId] = useAtom(selectedDraftIdAtom)
   const [loadingSubChats] = useAtom(loadingSubChatsAtom)
+  const pendingQuestions = useAtomValue(pendingUserQuestionsAtom)
   // Use ref instead of state to avoid re-renders on hover
   const isSidebarHoveredRef = useRef(false)
   const closeButtonRef = useRef<HTMLDivElement>(null)
@@ -1325,8 +1413,6 @@ export function AgentsSidebar({
   // Read unseen changes from global atoms
   const unseenChanges = useAtomValue(agentsUnseenChangesAtom)
   const justCreatedIds = useAtomValue(justCreatedIdsAtom)
-
-  const setShortcutsDialogOpen = useSetAtom(agentsShortcutsDialogOpenAtom)
 
   // Haptic feedback
   const { trigger: triggerHaptic } = useHaptic()
@@ -1878,6 +1964,15 @@ export function AgentsSidebar({
     return chatIdsWithPendingPlans
   }, [pendingPlanApprovalsData])
 
+  // Get workspace IDs that have pending user questions
+  const workspacePendingQuestions = useMemo(() => {
+    const chatIds = new Set<string>()
+    for (const question of pendingQuestions.values()) {
+      chatIds.add(question.parentChatId)
+    }
+    return chatIds
+  }, [pendingQuestions])
+
   const handleNewAgent = () => {
     triggerHaptic("light")
     setSelectedChatId(null)
@@ -2304,7 +2399,6 @@ export function AgentsSidebar({
         onToggleSidebar={onToggleSidebar}
         setSettingsDialogOpen={setSettingsDialogOpen}
         setSettingsActiveTab={setSettingsActiveTab}
-        setShortcutsDialogOpen={setShortcutsDialogOpen}
         setShowAuthDialog={setShowAuthDialog}
         handleSidebarMouseEnter={handleSidebarMouseEnter}
         handleSidebarMouseLeave={handleSidebarMouseLeave}
@@ -2453,6 +2547,7 @@ export function AgentsSidebar({
                 loadingChatIds={loadingChatIds}
                 unseenChanges={unseenChanges}
                 workspacePendingPlans={workspacePendingPlans}
+                workspacePendingQuestions={workspacePendingQuestions}
                 isMultiSelectMode={isMultiSelectMode}
                 selectedChatIds={selectedChatIds}
                 isMobileFullscreen={isMobileFullscreen}
@@ -2493,6 +2588,7 @@ export function AgentsSidebar({
                 loadingChatIds={loadingChatIds}
                 unseenChanges={unseenChanges}
                 workspacePendingPlans={workspacePendingPlans}
+                workspacePendingQuestions={workspacePendingQuestions}
                 isMultiSelectMode={isMultiSelectMode}
                 selectedChatIds={selectedChatIds}
                 isMobileFullscreen={isMobileFullscreen}

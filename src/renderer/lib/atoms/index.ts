@@ -175,6 +175,7 @@ export type SettingsTab =
   | "worktrees"
   | "debug"
   | "beta"
+  | "keyboard"
   | `project-${string}` // Dynamic project tabs
 export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
 export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
@@ -193,7 +194,27 @@ export type ModelProfile = {
   isOffline?: boolean // Mark as offline/Ollama profile
 }
 
-// Predefined offline profile for Ollama
+// Selected Ollama model for offline mode
+export const selectedOllamaModelAtom = atomWithStorage<string | null>(
+  "agents:selected-ollama-model",
+  null, // null = use recommended model
+  undefined,
+  { getOnInit: true },
+)
+
+// Helper to get offline profile with selected model
+export const getOfflineProfile = (modelName?: string | null): ModelProfile => ({
+  id: 'offline-ollama',
+  name: 'Offline (Ollama)',
+  isOffline: true,
+  config: {
+    model: modelName || 'qwen2.5-coder:7b',
+    token: 'ollama',
+    baseUrl: 'http://localhost:11434',
+  },
+})
+
+// Predefined offline profile for Ollama (legacy, uses default model)
 export const OFFLINE_PROFILE: ModelProfile = {
   id: 'offline-ollama',
   name: 'Offline (Ollama)',
@@ -378,6 +399,15 @@ export const analyticsOptOutAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Preferences - Disable Co-Authored-By Attribution
+// When true, Claude will not add "Co-authored-by: Claude" to git commits
+export const disableCoAuthoredByAtom = atomWithStorage<boolean>(
+  "preferences:disable-coauthored-by",
+  false, // Default to false (keep co-authored-by attribution)
+  undefined,
+  { getOnInit: true },
+)
+
 // Beta: Enable git features in diff sidebar (commit, staging, file selection)
 // When enabled, shows checkboxes for file selection and commit UI in diff sidebar
 // When disabled, shows simple file list with "Create PR" button
@@ -493,8 +523,29 @@ export const allFullThemesAtom = atom<VSCodeFullTheme[]>((get) => {
   return []
 })
 
-// Shortcuts dialog
-export const agentsShortcutsDialogOpenAtom = atom<boolean>(false)
+// ============================================
+// CUSTOM HOTKEYS CONFIGURATION
+// ============================================
+
+import type { CustomHotkeysConfig } from "../hotkeys/types"
+export type { CustomHotkeysConfig }
+
+/**
+ * Custom hotkey overrides storage
+ * Maps action IDs to custom hotkey strings (or null for default)
+ */
+export const customHotkeysAtom = atomWithStorage<CustomHotkeysConfig>(
+  "preferences:custom-hotkeys",
+  { version: 1, bindings: {} },
+  undefined,
+  { getOnInit: true },
+)
+
+/**
+ * Currently recording hotkey for action (UI state)
+ * null when not recording
+ */
+export const recordingHotkeyForActionAtom = atom<string | null>(null)
 
 // Login modal (shown when Claude Code auth fails)
 export const agentsLoginModalOpenAtom = atom<boolean>(false)

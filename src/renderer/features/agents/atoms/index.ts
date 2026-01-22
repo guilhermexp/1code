@@ -270,7 +270,7 @@ export const diffViewDisplayModeAtom = atomWithStorage<DiffViewDisplayMode>(
   { getOnInit: true },
 )
 
-// Diff sidebar open state storage - stores per chatId
+// Diff sidebar open state storage - stores per chatId (persisted)
 const diffSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
   "agents:diffSidebarOpen",
   {},
@@ -278,22 +278,36 @@ const diffSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
   { getOnInit: true },
 )
 
+// Runtime open state - not persisted, used for dialog/fullscreen modes
+const diffSidebarOpenRuntimeAtom = atom<Record<string, boolean>>({})
+
 // atomFamily to get/set diff sidebar open state per chatId
-// Only restores open state when display mode is "side-peek" (sidebar mode)
-// For dialog/fullscreen modes, we don't auto-restore the open state
+// Only restores persisted state when display mode is "side-peek" (sidebar mode)
+// For dialog/fullscreen modes, we use runtime state only (not auto-restored on page load)
 export const diffSidebarOpenAtomFamily = atomFamily((chatId: string) =>
   atom(
     (get) => {
       const displayMode = get(diffViewDisplayModeAtom)
-      const storedOpen = get(diffSidebarOpenStorageAtom)[chatId] ?? false
-      // Only restore open state for sidebar mode
+      const runtimeOpen = get(diffSidebarOpenRuntimeAtom)[chatId]
+
+      // If we have a runtime value, use it (user explicitly opened/closed)
+      if (runtimeOpen !== undefined) {
+        return runtimeOpen
+      }
+
+      // For initial load: only restore persisted state for sidebar mode
       // Dialog and fullscreen should not auto-open on page load
       if (displayMode !== "side-peek") {
         return false
       }
-      return storedOpen
+      return get(diffSidebarOpenStorageAtom)[chatId] ?? false
     },
     (get, set, isOpen: boolean) => {
+      // Always update runtime state
+      const currentRuntime = get(diffSidebarOpenRuntimeAtom)
+      set(diffSidebarOpenRuntimeAtom, { ...currentRuntime, [chatId]: isOpen })
+
+      // Also persist for sidebar mode
       const current = get(diffSidebarOpenStorageAtom)
       set(diffSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
     },
@@ -533,8 +547,9 @@ export const justCreatedIdsAtom = atom<Set<string>>(new Set())
 export const QUESTIONS_SKIPPED_MESSAGE = "User skipped questions - proceed with defaults"
 export const QUESTIONS_TIMED_OUT_MESSAGE = "Timed out"
 
-export type PendingUserQuestions = {
+export type PendingUserQuestion = {
   subChatId: string
+  parentChatId: string
   toolUseId: string
   questions: Array<{
     question: string
@@ -543,7 +558,11 @@ export type PendingUserQuestions = {
     multiSelect: boolean
   }>
 }
-export const pendingUserQuestionsAtom = atom<PendingUserQuestions | null>(null)
+// Map<subChatId, PendingUserQuestion> - supports multiple pending questions across workspaces
+export const pendingUserQuestionsAtom = atom<Map<string, PendingUserQuestion>>(new Map())
+
+// Legacy type alias for backwards compatibility
+export type PendingUserQuestions = PendingUserQuestion
 
 // Track sub-chats with pending plan approval (plan ready but not yet implemented)
 // Set<subChatId>

@@ -50,7 +50,7 @@ interface IsolatedMessageGroupProps {
     isPending: boolean
     isError: boolean
   }>
-  MessageGroupWrapper: React.ComponentType<{ children: React.ReactNode }>
+  MessageGroupWrapper: React.ComponentType<{ children: React.ReactNode; isLastGroup?: boolean }>
   toolRegistry: Record<string, { icon: any; title: (args: any) => string }>
 }
 
@@ -121,10 +121,13 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   const shouldShowSetupError =
     sandboxSetupStatus === "error" && isLastGroup && assistantIds.length === 0
 
+  // Check if this is an image-only message (no text content)
+  const isImageOnlyMessage = imageParts.length > 0 && !textContent.trim() && textMentions.length === 0
+
   return (
-    <MessageGroupWrapper>
-      {/* Attachments - NOT sticky */}
-      {imageParts.length > 0 && (
+    <MessageGroupWrapper isLastGroup={isLastGroup}>
+      {/* Attachments - NOT sticky (only when there's also text) */}
+      {imageParts.length > 0 && !isImageOnlyMessage && (
         <div className="mb-2 pointer-events-auto">
           <UserBubbleComponent
             messageId={userMsgId}
@@ -142,7 +145,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
         </div>
       )}
 
-      {/* User message text - sticky */}
+      {/* User message text - sticky (or image-only bubble) */}
       <div
         data-user-message-id={userMsgId}
         className={`[&>div]:!mb-4 pointer-events-auto sticky z-10 ${stickyTopClass}`}
@@ -150,8 +153,8 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
         <UserBubbleComponent
           messageId={userMsgId}
           textContent={textContent}
-          imageParts={[]}
-          skipTextMentionBlocks
+          imageParts={isImageOnlyMessage ? imageParts : []}
+          skipTextMentionBlocks={!isImageOnlyMessage}
         />
 
         {/* Cloning indicator */}
