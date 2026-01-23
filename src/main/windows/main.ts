@@ -207,6 +207,18 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
   )
   ipcMain.handle("clipboard:read", () => clipboard.readText())
 
+  // Clear cache for hard refresh
+  ipcMain.handle("cache:clear", async () => {
+    try {
+      await session.defaultSession.clearCache()
+      console.log("[Cache] Cache cleared successfully")
+      return true
+    } catch (error) {
+      console.error("[Cache] Failed to clear cache:", error)
+      return false
+    }
+  })
+
   // Inspector Mode - inject script into iframe (via iframe frame execution)
   ipcMain.handle("inspector:inject", async (_event, iframeUrl: string, enabled: boolean) => {
     const win = getWindow()

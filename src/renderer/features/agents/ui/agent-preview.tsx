@@ -327,11 +327,17 @@ export function AgentPreview({
     setTimeout(() => setIsRefreshing(false), 400)
   }, [isRefreshing])
 
-  const handleHardReload = useCallback(() => {
+  const handleHardReload = useCallback(async () => {
     if (isRefreshing) return
     setIsRefreshing(true)
     setIsLoaded(false)
-    // Add cache-busting timestamp
+    // Clear browser cache before reloading
+    try {
+      await window.desktopApi?.clearCache()
+    } catch (error) {
+      console.error("[Preview] Failed to clear cache:", error)
+    }
+    // Add cache-busting timestamp as fallback
     setCacheBuster(Date.now())
     setReloadKey((prev) => prev + 1)
     setTimeout(() => setIsRefreshing(false), 400)
@@ -651,7 +657,7 @@ export function AgentPreview({
               onClick={handleHardReload}
               disabled={isRefreshing}
               className="h-7 px-1.5 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md gap-0.5"
-              title="Hard Refresh (Cmd+Shift+R) - Bypass cache"
+              title="Hard Refresh (Cmd+Shift+R) - Clear cache"
             >
               <RefreshCcwDot
                 className={cn("h-4 w-4", isRefreshing && "animate-spin")}
@@ -741,7 +747,7 @@ export function AgentPreview({
               onClick={handleHardReload}
               disabled={isRefreshing}
               className="h-7 px-1.5 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md gap-0.5"
-              title="Hard Refresh (Cmd+Shift+R) - Bypass cache"
+              title="Hard Refresh (Cmd+Shift+R) - Clear cache"
             >
               <RefreshCcwDot
                 className={cn(

@@ -120,6 +120,9 @@ contextBridge.exposeInMainWorld("desktopApi", {
   clipboardWrite: (text: string) => ipcRenderer.invoke("clipboard:write", text),
   clipboardRead: () => ipcRenderer.invoke("clipboard:read"),
 
+  // Cache
+  clearCache: () => ipcRenderer.invoke("cache:clear"),
+
   // Inspector Mode
   inspectorInject: (iframeUrl: string, enabled: boolean) =>
     ipcRenderer.invoke("inspector:inject", iframeUrl, enabled),
@@ -225,6 +228,8 @@ export interface DesktopApi {
   getApiBaseUrl: () => Promise<string>
   clipboardWrite: (text: string) => Promise<void>
   clipboardRead: () => Promise<string>
+  // Cache
+  clearCache: () => Promise<boolean>
   // Auth
   getUser: () => Promise<{
     id: string

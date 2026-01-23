@@ -2,7 +2,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { AlignJustify, Plus, Zap } from "lucide-react"
+import { AlignJustify, Plus, Zap, FolderOpen, Globe, TerminalSquare } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button } from "../../../components/ui/button"
@@ -28,6 +28,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../../components/ui/popover"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "../../../components/ui/tooltip"
 import { cn } from "../../../lib/utils"
 import {
   agentsDebugModeAtom,
@@ -687,6 +692,22 @@ export function NewChatForm({
     await openFolder.mutateAsync()
   }
 
+  // Mutations for project action buttons
+  const openInFinderMutation = trpc.external.openInFinder.useMutation()
+  const openInEditorMutation = trpc.external.openFileInEditor.useMutation()
+
+  const handleOpenInFinder = () => {
+    if (validatedProject?.path) {
+      openInFinderMutation.mutate(validatedProject.path)
+    }
+  }
+
+  const handleOpenInEditor = () => {
+    if (validatedProject?.path) {
+      openInEditorMutation.mutate({ path: validatedProject.path })
+    }
+  }
+
   const getAgentIcon = (agentId: string, className?: string) => {
     switch (agentId) {
       case "claude-code":
@@ -1074,6 +1095,41 @@ export function NewChatForm({
             />
           )}
         </div>
+
+        {/* Project action buttons - show when project is selected */}
+        {validatedProject && !isMobileFullscreen && (
+          <div className="flex items-center gap-1">
+            <Tooltip delayDuration={300}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleOpenInEditor}
+                  className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-muted-foreground hover:text-foreground flex-shrink-0 rounded-md"
+                  aria-label="Open in editor"
+                >
+                  <TerminalSquare className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Open in editor</TooltipContent>
+            </Tooltip>
+
+            <Tooltip delayDuration={300}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleOpenInFinder}
+                  className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-muted-foreground hover:text-foreground flex-shrink-0 rounded-md"
+                  aria-label="Open in Finder"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Open in Finder</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-1 items-center justify-center overflow-y-auto relative">
