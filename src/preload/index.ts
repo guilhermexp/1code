@@ -1,12 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron"
 import { exposeElectronTRPC } from "trpc-electron/main"
 
-// Only initialize Sentry in production to avoid IPC errors in dev mode
-if (process.env.NODE_ENV === "production") {
-  import("@sentry/electron/renderer").then((Sentry) => {
-    Sentry.init()
-  })
-}
+// Sentry disabled - not using error tracking in this fork
+// To re-enable, uncomment and ensure MAIN_VITE_SENTRY_DSN is configured
+// if (process.env.NODE_ENV === "production") {
+//   import("@sentry/electron/renderer").then((Sentry) => {
+//     Sentry.init()
+//   })
+// }
 
 // Expose tRPC IPC bridge for type-safe communication
 exposeElectronTRPC()

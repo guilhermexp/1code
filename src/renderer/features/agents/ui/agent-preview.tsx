@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { useAtom } from "jotai"
 import { Button } from "../../../components/ui/button"
-import { RotateCw, Target } from "lucide-react"
+import { RotateCw, RefreshCcwDot, Target, ChevronLeft, ChevronRight } from "lucide-react"
 import {
   ExternalLinkIcon,
   IconDoubleChevronRight,
@@ -50,6 +50,7 @@ export function AgentPreview({
   const [isLoaded, setIsLoaded] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [cacheBuster, setCacheBuster] = useState<number | null>(null)
   const [editableCustomUrl, setEditableCustomUrl] = useState(customUrl || "")
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const frameRef = useRef<HTMLDivElement>(null)
@@ -80,6 +81,11 @@ export function AgentPreview({
   // - currentPath: Display path (updates immediately on internal navigation)
   const [loadedPath, setLoadedPath] = useState(persistedPath)
   const [currentPath, setCurrentPath] = useState(persistedPath)
+
+  // Navigation history state
+  const [navHistory, setNavHistory] = useState<string[]>([persistedPath])
+  const [navIndex, setNavIndex] = useState(0)
+  const isNavigatingRef = useRef(false) // Prevents adding to history during back/forward
 
   // Listen for reload events from external header
   useEffect(() => {
@@ -177,11 +183,19 @@ export function AgentPreview({
   const previewUrl = useMemo(() => {
     if (previewBaseUrl === "about:blank") return previewBaseUrl
     // For custom URLs, check if it already includes a path
+    let url: string
     if (editableCustomUrl && editableCustomUrl.includes(loadedPath) && loadedPath !== "/") {
-      return editableCustomUrl
+      url = editableCustomUrl
+    } else {
+      url = `${previewBaseUrl}${loadedPath}`
     }
-    return `${previewBaseUrl}${loadedPath}`
-  }, [previewBaseUrl, loadedPath, editableCustomUrl])
+    // Add cache-buster for hard refresh
+    if (cacheBuster) {
+      const separator = url.includes("?") ? "&" : "?"
+      url = `${url}${separator}_cb=${cacheBuster}`
+    }
+    return url
+  }, [previewBaseUrl, loadedPath, editableCustomUrl, cacheBuster])
 
   // Handle path selection from URL bar
   const handlePathSelect = useCallback(
@@ -190,9 +204,57 @@ export function AgentPreview({
       setCurrentPath(path) // Updates URL bar display
       setPersistedPath(path) // Persist to localStorage
       setIsLoaded(false) // Show loading state
+
+      // Add to navigation history (only if not navigating via back/forward)
+      if (!isNavigatingRef.current) {
+        setNavHistory((prev) => {
+          // Remove any forward history and add new path
+          const newHistory = [...prev.slice(0, navIndex + 1), path]
+          return newHistory
+        })
+        setNavIndex((prev) => prev + 1)
+      }
     },
-    [setPersistedPath],
+    [setPersistedPath, navIndex],
   )
+
+  // Navigation: Go back
+  const handleNavBack = useCallback(() => {
+    if (navIndex > 0) {
+      isNavigatingRef.current = true
+      const newIndex = navIndex - 1
+      const path = navHistory[newIndex]
+      setNavIndex(newIndex)
+      setLoadedPath(path)
+      setCurrentPath(path)
+      setPersistedPath(path)
+      setIsLoaded(false)
+      setTimeout(() => {
+        isNavigatingRef.current = false
+      }, 100)
+    }
+  }, [navIndex, navHistory, setPersistedPath])
+
+  // Navigation: Go forward
+  const handleNavForward = useCallback(() => {
+    if (navIndex < navHistory.length - 1) {
+      isNavigatingRef.current = true
+      const newIndex = navIndex + 1
+      const path = navHistory[newIndex]
+      setNavIndex(newIndex)
+      setLoadedPath(path)
+      setCurrentPath(path)
+      setPersistedPath(path)
+      setIsLoaded(false)
+      setTimeout(() => {
+        isNavigatingRef.current = false
+      }, 100)
+    }
+  }, [navIndex, navHistory, setPersistedPath])
+
+  // Check if can navigate
+  const canGoBack = navIndex > 0
+  const canGoForward = navIndex < navHistory.length - 1
 
   // Listen for SET_URL messages from iframe for bi-directional sync
   useEffect(() => {
@@ -218,6 +280,19 @@ export function AgentPreview({
         // Do NOT update loadedPath - that would cause iframe remount
         setCurrentPath(newPath)
         setPersistedPath(newPath) // Persist to localStorage
+
+        // Add to navigation history (only if not navigating via back/forward and path changed)
+        if (!isNavigatingRef.current) {
+          setNavHistory((prev) => {
+            const lastPath = prev[prev.length - 1]
+            if (lastPath === newPath) return prev // Don't duplicate
+            // Remove any forward history and add new path
+            const currentIndex = prev.indexOf(lastPath)
+            const newHistory = [...prev.slice(0, currentIndex + 1), newPath]
+            return newHistory
+          })
+          setNavIndex((prev) => prev + 1)
+        }
       }
     }
 
@@ -251,6 +326,25 @@ export function AgentPreview({
     setReloadKey((prev) => prev + 1)
     setTimeout(() => setIsRefreshing(false), 400)
   }, [isRefreshing])
+
+  const handleHardReload = useCallback(() => {
+    if (isRefreshing) return
+    setIsRefreshing(true)
+    setIsLoaded(false)
+    // Add cache-busting timestamp
+    setCacheBuster(Date.now())
+    setReloadKey((prev) => prev + 1)
+    setTimeout(() => setIsRefreshing(false), 400)
+  }, [isRefreshing])
+
+  // Handle iframe load - clears cache buster after hard refresh completes
+  const handleIframeLoad = useCallback(() => {
+    setIsLoaded(true)
+    // Clear cache buster after load so subsequent navigations don't have it
+    if (cacheBuster) {
+      setCacheBuster(null)
+    }
+  }, [cacheBuster])
 
   const handlePresetChange = useCallback(
     (presetName: string) => {
@@ -514,6 +608,29 @@ export function AgentPreview({
               <span className="sr-only">Back to chat</span>
             </Button>
 
+            {/* Navigation buttons */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleNavBack}
+              disabled={!canGoBack}
+              className="h-7 w-7 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md disabled:opacity-30"
+              title="Go back"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleNavForward}
+              disabled={!canGoForward}
+              className="h-7 w-7 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md disabled:opacity-30"
+              title="Go forward"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+
             {/* Reload button */}
             <Button
               variant="ghost"
@@ -521,10 +638,25 @@ export function AgentPreview({
               onClick={handleReload}
               disabled={isRefreshing}
               className="h-7 w-7 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md"
+              title="Refresh"
             >
               <RotateCw
                 className={cn("h-4 w-4", isRefreshing && "animate-spin")}
               />
+            </Button>
+
+            {/* Hard Reload button */}
+            <Button
+              variant="ghost"
+              onClick={handleHardReload}
+              disabled={isRefreshing}
+              className="h-7 px-1.5 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] flex-shrink-0 rounded-md gap-0.5"
+              title="Hard Refresh (Cmd+Shift+R) - Bypass cache"
+            >
+              <RefreshCcwDot
+                className={cn("h-4 w-4", isRefreshing && "animate-spin")}
+              />
+              <span className="text-[10px] font-medium text-muted-foreground">HR</span>
             </Button>
 
             {/* URL Input - centered, flexible */}
@@ -537,7 +669,7 @@ export function AgentPreview({
                 className="w-full"
                 variant="mobile"
                 fullUrl={editableCustomUrl || undefined}
-                onFullUrlChange={editableCustomUrl ? handleCustomUrlChange : undefined}
+                onFullUrlChange={handleCustomUrlChange}
               />
             </div>
 
@@ -566,13 +698,35 @@ export function AgentPreview({
       {/* Desktop Header */}
       {!isMobile && !hideHeader && (
         <div className="flex items-center justify-between px-3 h-10 bg-tl-background flex-shrink-0">
-          {/* Left: Refresh + Viewport Toggle + Scale */}
+          {/* Left: Back/Forward + Refresh + Hard Refresh + Viewport Toggle + Scale */}
           <div className="flex items-center gap-1 flex-1">
+            {/* Navigation buttons */}
+            <Button
+              variant="ghost"
+              onClick={handleNavBack}
+              disabled={!canGoBack}
+              className="h-7 w-7 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md disabled:opacity-30"
+              title="Go back"
+            >
+              <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              onClick={handleNavForward}
+              disabled={!canGoForward}
+              className="h-7 w-7 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md disabled:opacity-30"
+              title="Go forward"
+            >
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </Button>
+
             <Button
               variant="ghost"
               onClick={handleReload}
               disabled={isRefreshing}
               className="h-7 w-7 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
+              title="Refresh"
             >
               <RotateCw
                 className={cn(
@@ -580,6 +734,22 @@ export function AgentPreview({
                   isRefreshing && "animate-spin",
                 )}
               />
+            </Button>
+
+            <Button
+              variant="ghost"
+              onClick={handleHardReload}
+              disabled={isRefreshing}
+              className="h-7 px-1.5 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md gap-0.5"
+              title="Hard Refresh (Cmd+Shift+R) - Bypass cache"
+            >
+              <RefreshCcwDot
+                className={cn(
+                  "h-3.5 w-3.5 text-muted-foreground",
+                  isRefreshing && "animate-spin",
+                )}
+              />
+              <span className="text-[10px] font-medium text-muted-foreground">HR</span>
             </Button>
 
             <ViewportToggle value={viewportMode} onChange={setViewportMode} />
@@ -596,7 +766,7 @@ export function AgentPreview({
               isLoading={!isLoaded}
               className="max-w-[350px] w-full"
               fullUrl={editableCustomUrl || undefined}
-              onFullUrlChange={editableCustomUrl ? handleCustomUrlChange : undefined}
+              onFullUrlChange={handleCustomUrlChange}
             />
           </div>
 
@@ -681,7 +851,7 @@ export function AgentPreview({
                 title="Preview"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
                 allow="clipboard-write"
-                onLoad={() => setIsLoaded(true)}
+                onLoad={handleIframeLoad}
                 onError={() => setIsLoaded(true)}
               />
             </div>
@@ -767,7 +937,7 @@ export function AgentPreview({
                     borderRadius: viewportMode === "desktop" ? "8px" : "24px",
                   }}
                   sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-                  onLoad={() => setIsLoaded(true)}
+                  onLoad={handleIframeLoad}
                   title="Preview"
                   tabIndex={-1}
                 />

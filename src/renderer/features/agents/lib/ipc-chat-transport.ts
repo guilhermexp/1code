@@ -1,5 +1,13 @@
-import * as Sentry from "@sentry/electron/renderer"
 import type { ChatTransport, UIMessage } from "ai"
+
+// Helper to capture exceptions only in production (avoids sentry-ipc errors in dev)
+const captureException = (error: Error, context?: Record<string, unknown>) => {
+  if (import.meta.env.PROD) {
+    import("@sentry/electron/renderer").then((Sentry) => {
+      Sentry.captureException(error, { extra: context })
+    })
+  }
+}
 import { toast } from "sonner"
 import {
   agentsLoginModalOpenAtom,
@@ -305,7 +313,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
               if (chunk.type === "error") {
                 // Track error in Sentry
                 const category = chunk.debugInfo?.category || "UNKNOWN"
-                Sentry.captureException(
+                captureException(
                   new Error(chunk.errorText || "Claude transport error"),
                   {
                     tags: {
@@ -367,7 +375,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             onError: (err: Error) => {
               console.log(`[SD] R:ERROR sub=${subId} n=${chunkCount} last=${lastChunkType} err=${err.message}`)
               // Track transport errors in Sentry
-              Sentry.captureException(err, {
+              captureException(err, {
                 tags: {
                   errorCategory: "TRANSPORT_ERROR",
                   mode: currentMode,

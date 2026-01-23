@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/electron/main"
 import { app, BrowserWindow, Menu, session } from "electron"
 import { existsSync, readFileSync, readlinkSync, unlinkSync } from "fs"
 import { createServer } from "http"
@@ -39,17 +38,20 @@ if (IS_DEV) {
 }
 
 // Initialize Sentry before app is ready (production only)
+// Use dynamic import to avoid loading Sentry module in dev mode (causes IPC errors)
 if (app.isPackaged && !IS_DEV) {
   const sentryDsn = import.meta.env.MAIN_VITE_SENTRY_DSN
   if (sentryDsn) {
-    try {
-      Sentry.init({
-        dsn: sentryDsn,
+    import("@sentry/electron/main")
+      .then((Sentry) => {
+        Sentry.init({
+          dsn: sentryDsn,
+        })
+        console.log("[App] Sentry initialized")
       })
-      console.log("[App] Sentry initialized")
-    } catch (error) {
-      console.warn("[App] Failed to initialize Sentry:", error)
-    }
+      .catch((error) => {
+        console.warn("[App] Failed to initialize Sentry:", error)
+      })
   } else {
     console.log("[App] Skipping Sentry initialization (no DSN configured)")
   }

@@ -593,12 +593,41 @@ export function createMainWindow(): BrowserWindow {
     // Log CSP modifications for debugging
     const isLocalhost = details.url.includes('localhost') || details.url.includes('127.0.0.1')
 
+    // Debug logging for localhost URLs to help diagnose iframe blocking issues
+    if (isLocalhost) {
+      console.log(`[CSP Debug] Headers for ${details.url}:`, Object.keys(responseHeaders))
+    }
+
+    // For localhost URLs, remove headers that block iframe embedding (case-insensitive)
+    if (isLocalhost) {
+      for (const key of Object.keys(responseHeaders)) {
+        const lowerKey = key.toLowerCase()
+        // Remove X-Frame-Options regardless of capitalization
+        if (lowerKey === 'x-frame-options') {
+          delete responseHeaders[key]
+          console.log(`[CSP] Removed ${key} header for localhost`)
+        }
+        // Also remove Content-Security-Policy-Report-Only which can contain frame-ancestors
+        if (lowerKey === 'content-security-policy-report-only') {
+          delete responseHeaders[key]
+          console.log(`[CSP] Removed ${key} header for localhost`)
+        }
+      }
+    }
+
+    // Find CSP header key case-insensitively
+    const cspHeaderKey = Object.keys(responseHeaders).find(
+      key => key.toLowerCase() === 'content-security-policy'
+    )
+
     // Allow loading localhost in iframes and jsdelivr CDN by modifying CSP
-    if (responseHeaders["content-security-policy"]) {
-      const originalCSP = responseHeaders["content-security-policy"]
-      responseHeaders["content-security-policy"] = responseHeaders[
-        "content-security-policy"
-      ].map((csp: string) => {
+    if (cspHeaderKey && responseHeaders[cspHeaderKey]) {
+      const originalCSP = responseHeaders[cspHeaderKey]
+      if (isLocalhost) {
+        console.log(`[CSP] Found ${cspHeaderKey} header for ${details.url}`)
+        console.log(`[CSP] Original value:`, originalCSP)
+      }
+      responseHeaders[cspHeaderKey] = (responseHeaders[cspHeaderKey] as string[]).map((csp: string) => {
         const addSources = (
           currentCsp: string,
           directive: string,
@@ -615,7 +644,20 @@ export function createMainWindow(): BrowserWindow {
           return `${currentCsp}; ${directive} ${sources.join(" ")}`
         }
 
+        // Remove frame-ancestors directive for localhost (it blocks iframe embedding)
+        const removeFrameAncestors = (currentCsp: string): string => {
+          // Remove frame-ancestors directive entirely for localhost URLs
+          return currentCsp.replace(/frame-ancestors\s+[^;]*(;|$)/gi, '')
+        }
+
         let modifiedCSP = csp
+
+        // For localhost URLs, remove frame-ancestors to allow embedding in our preview
+        if (isLocalhost) {
+          modifiedCSP = removeFrameAncestors(modifiedCSP)
+          console.log(`[CSP] Removed frame-ancestors for localhost ${details.url}`)
+        }
+
         modifiedCSP = addSources(modifiedCSP, "frame-src", [
           "'self'",
           "http://localhost:*",
@@ -628,21 +670,19 @@ export function createMainWindow(): BrowserWindow {
           "http://localhost:*",
           "http://127.0.0.1:*"
         ])
-        modifiedCSP = addSources(modifiedCSP, "script-src-elem", [
-          "'self'",
-          "https://cdn.jsdelivr.net",
-          "https://unpkg.com"
-        ])
-        modifiedCSP = addSources(modifiedCSP, "script-src", [
-          "'self'",
-          "https://cdn.jsdelivr.net",
-          "https://unpkg.com"
-        ])
-        modifiedCSP = addSources(modifiedCSP, "connect-src", [
-          "'self'",
-          "https://cdn.jsdelivr.net",
-          "https://unpkg.com"
-        ])
+        // For localhost, also allow unsafe-inline for inline scripts (needed by Next.js, React, etc.)
+        const scriptSources = isLocalhost
+          ? ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net", "https://unpkg.com"]
+          : ["'self'", "https://cdn.jsdelivr.net", "https://unpkg.com"]
+
+        modifiedCSP = addSources(modifiedCSP, "script-src-elem", scriptSources)
+        modifiedCSP = addSources(modifiedCSP, "script-src", scriptSources)
+        // For localhost, also allow WebSocket connections for hot reload
+        const connectSources = isLocalhost
+          ? ["'self'", "ws://localhost:*", "ws://127.0.0.1:*", "http://localhost:*", "http://127.0.0.1:*", "https://cdn.jsdelivr.net", "https://unpkg.com"]
+          : ["'self'", "https://cdn.jsdelivr.net", "https://unpkg.com"]
+
+        modifiedCSP = addSources(modifiedCSP, "connect-src", connectSources)
         modifiedCSP = addSources(modifiedCSP, "style-src", [
           "'self'",
           "'unsafe-inline'",
@@ -661,7 +701,8 @@ export function createMainWindow(): BrowserWindow {
     } else if (isLocalhost) {
       // If localhost has no CSP, inject a permissive one for Inspector Mode
       console.log(`[CSP] No CSP found for localhost ${details.url}, injecting permissive CSP`)
-      responseHeaders["content-security-policy"] = [
+      // Use standard PascalCase for the header
+      responseHeaders["Content-Security-Policy"] = [
         "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; connect-src *"
       ]
     }

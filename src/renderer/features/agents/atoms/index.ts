@@ -26,6 +26,29 @@ const previewPathsStorageAtom = atomWithStorage<Record<string, string>>(
   { getOnInit: true },
 )
 
+// Preview URL history - stores recent full URLs (global, not per chat)
+// Max 20 URLs, most recent first
+const MAX_URL_HISTORY = 20
+export const previewUrlHistoryAtom = atomWithStorage<string[]>(
+  "agents:previewUrlHistory",
+  [],
+  undefined,
+  { getOnInit: true },
+)
+
+// Helper atom to add a URL to history (dedupes and limits size)
+export const addPreviewUrlToHistoryAtom = atom(
+  null,
+  (get, set, newUrl: string) => {
+    const current = get(previewUrlHistoryAtom)
+    // Remove if already exists (will be re-added at front)
+    const filtered = current.filter((url) => url !== newUrl)
+    // Add to front and limit size
+    const updated = [newUrl, ...filtered].slice(0, MAX_URL_HISTORY)
+    set(previewUrlHistoryAtom, updated)
+  },
+)
+
 // atomFamily to get/set preview path per chatId
 export const previewPathAtomFamily = atomFamily((chatId: string) =>
   atom(

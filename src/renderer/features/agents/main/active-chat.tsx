@@ -39,6 +39,7 @@ import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
   ArrowDown,
   ChevronDown,
+  Globe,
   ListTree,
   TerminalSquare
 } from "lucide-react"
@@ -61,6 +62,7 @@ import { getQueryClient } from "../../../contexts/TRPCProvider"
 import { trackMessageSent } from "../../../lib/analytics"
 import { apiFetch } from "../../../lib/api-fetch"
 import {
+  agentsSidebarOpenAtom,
   customClaudeConfigAtom,
   isDesktopAtom, isFullscreenAtom,
   normalizeCustomClaudeConfig,
@@ -2261,11 +2263,8 @@ const ChatViewInner = memo(function ChatViewInner({
     // Mark as manually aborted to prevent completion sound
     agentChatStore.setManuallyAborted(subChatId, true)
     await stopRef.current()
-    // Call DELETE endpoint to cancel server-side stream
-    await fetch(
-      `/api/agents/chat?id=${encodeURIComponent(subChatId)}`,
-      { method: "DELETE", credentials: "include" },
-    )
+    // Cancel Claude process via tRPC (desktop app uses IPC, not HTTP)
+    await trpcClient.claude.cancel.mutate({ subChatId })
   }, [subChatId])
 
   // Wrapper for addTextContext that handles TextSelectionSource
@@ -3012,11 +3011,8 @@ const ChatViewInner = memo(function ChatViewInner({
         // Mark as manually aborted to prevent completion sound
         agentChatStore.setManuallyAborted(subChatId, true)
         await stop()
-        // Call DELETE endpoint to cancel server-side stream
-        await fetch(`/api/agents/chat?id=${encodeURIComponent(subChatId)}`, {
-          method: "DELETE",
-          credentials: "include",
-        })
+        // Cancel Claude process via tRPC (desktop app uses IPC, not HTTP)
+        await trpcClient.claude.cancel.mutate({ subChatId })
       }
     }
 
@@ -4011,6 +4007,8 @@ export function ChatView({
   const [isPreviewSidebarOpen, setIsPreviewSidebarOpen] = useAtom(
     agentsPreviewSidebarOpenAtom,
   )
+  // Left sidebar control - used to auto-close when preview opens
+  const setLeftSidebarOpen = useSetAtom(agentsSidebarOpenAtom)
   // Custom preview URL per chat (temporary, not persisted)
   const customPreviewUrlAtom = useMemo(
     () => previewCustomUrlAtomFamily(chatId),
@@ -4436,8 +4434,10 @@ export function ChatView({
     console.log('[Preview] Opening preview with URL:', url)
     setCustomPreviewUrl(url)
     setIsPreviewSidebarOpen(true)
+    // Auto-close left sidebar to give more space for preview
+    setLeftSidebarOpen(false)
     console.log('[Preview] Preview sidebar opened')
-  }, [setCustomPreviewUrl, setIsPreviewSidebarOpen])
+  }, [setCustomPreviewUrl, setIsPreviewSidebarOpen, setLeftSidebarOpen])
 
   // Note: We no longer forcibly close diff sidebar when canOpenDiff is false.
   // The sidebar render is guarded by canOpenDiff, so it naturally hides.
@@ -5647,11 +5647,15 @@ Make sure to preserve all functionality from both branches when resolving confli
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => setIsPreviewSidebarOpen(true)}
+                        onClick={() => {
+                          setIsPreviewSidebarOpen(true)
+                          // Auto-close left sidebar to give more space for preview
+                          setLeftSidebarOpen(false)
+                        }}
                         className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
                         aria-label="Open preview"
                       >
-                        <IconOpenSidebarRight className="h-4 w-4" />
+                        <Globe className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Open preview</TooltipContent>
