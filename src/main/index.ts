@@ -2,10 +2,11 @@ import { app, BrowserWindow, Menu, session } from "electron"
 import { existsSync, readFileSync, readlinkSync, unlinkSync } from "fs"
 import { createServer } from "http"
 import { join } from "path"
-import { AuthManager } from "./auth-manager"
+import { AuthManager, initAuthManager, getAuthManager as getAuthManagerFromModule } from "./auth-manager"
 import {
   identify,
   initAnalytics,
+  setSubscriptionPlan,
   shutdown as shutdownAnalytics,
   trackAppOpened,
   trackAuthCompleted,
@@ -17,12 +18,24 @@ import {
   setupFocusUpdateCheck,
 } from "./lib/auto-updater"
 import { closeDatabase, initDatabase } from "./lib/db"
+import {
+  getLaunchDirectory,
+  isCliInstalled,
+  installCli,
+  uninstallCli,
+  parseLaunchDirectory,
+} from "./lib/cli"
 import { cleanupGitWatchers } from "./lib/git/watcher"
 import { cancelAllPendingOAuth, handleMcpOAuthCallback } from "./lib/mcp-auth"
-import { createMainWindow, getWindow } from "./windows/main"
+import {
+  createMainWindow,
+  createWindow,
+  getWindow,
+  getAllWindows,
+} from "./windows/main"
+import { windowManager } from "./windows/window-manager"
 
-// Dev mode detection
-const IS_DEV = !!process.env.ELECTRON_RENDERER_URL
+import { IS_DEV, AUTH_SERVER_PORT } from "./constants"
 
 // Deep link protocol (must match package.json build.protocols.schemes)
 // Use different protocol in dev to avoid conflicts with production app
@@ -73,11 +86,12 @@ export function getAppUrl(): string {
   return process.env.ELECTRON_RENDERER_URL || "https://21st.dev/agents"
 }
 
-// Auth manager singleton
+// Auth manager singleton (use the one from auth-manager module)
 let authManager: AuthManager
 
 export function getAuthManager(): AuthManager {
-  return authManager
+  // First try to get from module, fallback to local variable for backwards compat
+  return getAuthManagerFromModule() || authManager
 }
 
 // Handle auth code from deep link (exported for IPC handlers)
@@ -90,6 +104,16 @@ export async function handleAuthCode(code: string): Promise<void> {
 
     // Track successful authentication
     trackAuthCompleted(authData.user.id, authData.user.email)
+
+    // Fetch and set subscription plan for analytics
+    try {
+      const planData = await authManager.fetchUserPlan()
+      if (planData) {
+        setSubscriptionPlan(planData.plan)
+      }
+    } catch (e) {
+      console.warn("[Auth] Failed to fetch user plan for analytics:", e)
+    }
 
     // Set desktop token cookie using persist:main partition
     const ses = session.fromPartition("persist:main")
@@ -113,20 +137,46 @@ export async function handleAuthCode(code: string): Promise<void> {
       console.warn("[Auth] Cookie set failed (non-critical):", cookieError)
     }
 
-    // Notify renderer
-    const win = getWindow()
-    win?.webContents.send("auth:success", authData.user)
+    // Notify all windows and reload them to show app
+    const windows = getAllWindows()
+    for (const win of windows) {
+      try {
+        if (win.isDestroyed()) continue
+        win.webContents.send("auth:success", authData.user)
 
-    // Reload window to show app
-    if (process.env.ELECTRON_RENDERER_URL) {
-      win?.loadURL(process.env.ELECTRON_RENDERER_URL)
-    } else {
-      win?.loadFile(join(__dirname, "../renderer/index.html"))
+        // Use stable window ID (main, window-2, etc.) instead of Electron's numeric ID
+        const stableId = windowManager.getStableId(win)
+
+        if (process.env.ELECTRON_RENDERER_URL) {
+          // Pass window ID via query param for dev mode
+          const url = new URL(process.env.ELECTRON_RENDERER_URL)
+          url.searchParams.set("windowId", stableId)
+          win.loadURL(url.toString())
+        } else {
+          // Pass window ID via hash for production
+          win.loadFile(join(__dirname, "../renderer/index.html"), {
+            hash: `windowId=${stableId}`,
+          })
+        }
+      } catch (error) {
+        // Window may have been destroyed during iteration
+        console.warn("[Auth] Failed to reload window:", error)
+      }
     }
-    win?.focus()
+    // Focus the first window
+    windows[0]?.focus()
   } catch (error) {
     console.error("[Auth] Exchange failed:", error)
-    getWindow()?.webContents.send("auth:error", (error as Error).message)
+    // Broadcast auth error to all windows (not just focused)
+    for (const win of getAllWindows()) {
+      try {
+        if (!win.isDestroyed()) {
+          win.webContents.send("auth:error", (error as Error).message)
+        }
+      } catch {
+        // Window destroyed during iteration
+      }
+    }
   }
 }
 
@@ -233,9 +283,9 @@ const FAVICON_SVG = `<svg width="32" height="32" viewBox="0 0 1024 1024" fill="n
 const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(FAVICON_SVG)}`
 
 // Start local HTTP server for auth callbacks
-// This catches http://localhost:21321/auth/callback?code=xxx and /mcp-oauth/callback
+// This catches http://localhost:{AUTH_SERVER_PORT}/auth/callback?code=xxx and /callback (for MCP OAuth)
 const server = createServer((req, res) => {
-    const url = new URL(req.url || "", "http://localhost:21321")
+    const url = new URL(req.url || "", `http://localhost:${AUTH_SERVER_PORT}`)
 
     // Serve favicon
     if (url.pathname === "/favicon.ico" || url.pathname === "/favicon.svg") {
@@ -324,8 +374,8 @@ const server = createServer((req, res) => {
         res.writeHead(400, { "Content-Type": "text/plain" })
         res.end("Missing code parameter")
       }
-    } else if (url.pathname === "/mcp-oauth/callback") {
-      // Handle MCP OAuth callback in dev mode
+    } else if (url.pathname === "/callback") {
+      // Handle MCP OAuth callback
       const code = url.searchParams.get("code")
       const state = url.searchParams.get("state")
       console.log(
@@ -414,8 +464,8 @@ const server = createServer((req, res) => {
     }
   })
 
-server.listen(21321, () => {
-  console.log("[Auth Server] Listening on http://localhost:21321")
+server.listen(AUTH_SERVER_PORT, () => {
+  console.log(`[Auth Server] Listening on http://localhost:${AUTH_SERVER_PORT}`)
 })
 
 // Clean up stale lock files from crashed instances
@@ -484,10 +534,15 @@ if (gotTheLock) {
       handleDeepLink(url)
     }
 
-    const window = getWindow()
-    if (window) {
+    // Focus on the first available window
+    const windows = getAllWindows()
+    if (windows.length > 0) {
+      const window = windows[0]!
       if (window.isMinimized()) window.restore()
       window.focus()
+    } else {
+      // No windows open, create a new one
+      createMainWindow()
     }
   })
 
@@ -546,9 +601,13 @@ if (gotTheLock) {
     // Track update availability for menu
     let updateAvailable = false
     let availableVersion: string | null = null
+    // Track devtools unlock state (hidden feature - 5 clicks on Beta tab)
+    let devToolsUnlocked = false
 
     // Function to build and set application menu
     const buildMenu = () => {
+      // Show devtools menu item only in dev mode or when unlocked
+      const showDevTools = !app.isPackaged || devToolsUnlocked
       const template: Electron.MenuItemConstructorOptions[] = [
         {
           label: app.name,
@@ -569,6 +628,41 @@ if (gotTheLock) {
                   downloadUpdate()
                 } else {
                   checkForUpdates(true)
+                }
+              },
+            },
+            { type: "separator" },
+            {
+              label: isCliInstalled()
+                ? "Uninstall '1code' Command..."
+                : "Install '1code' Command in PATH...",
+              click: async () => {
+                const { dialog } = await import("electron")
+                if (isCliInstalled()) {
+                  const result = await uninstallCli()
+                  if (result.success) {
+                    dialog.showMessageBox({
+                      type: "info",
+                      message: "CLI command uninstalled",
+                      detail: "The '1code' command has been removed from your PATH.",
+                    })
+                    buildMenu()
+                  } else {
+                    dialog.showErrorBox("Uninstallation Failed", result.error || "Unknown error")
+                  }
+                } else {
+                  const result = await installCli()
+                  if (result.success) {
+                    dialog.showMessageBox({
+                      type: "info",
+                      message: "CLI command installed",
+                      detail:
+                        "You can now use '1code .' in any terminal to open 1Code in that directory.",
+                    })
+                    buildMenu()
+                  } else {
+                    dialog.showErrorBox("Installation Failed", result.error || "Unknown error")
+                  }
                 }
               },
             },
@@ -599,6 +693,25 @@ if (gotTheLock) {
                 }
               },
             },
+            {
+              label: "New Window",
+              accelerator: "CmdOrCtrl+Shift+N",
+              click: () => {
+                console.log("[Menu] New Window clicked (Cmd+Shift+N)")
+                createWindow()
+              },
+            },
+            { type: "separator" },
+            {
+              label: "Close Window",
+              accelerator: "CmdOrCtrl+W",
+              click: () => {
+                const win = getWindow()
+                if (win) {
+                  win.close()
+                }
+              },
+            },
           ],
         },
         {
@@ -616,9 +729,11 @@ if (gotTheLock) {
         {
           label: "View",
           submenu: [
-            { role: "reload" },
+            // Cmd+R is disabled to prevent accidental page refresh
+            // Use Cmd+Shift+R (Force Reload) for intentional reloads
             { role: "forceReload" },
-            { role: "toggleDevTools" },
+            // Only show DevTools in dev mode or when unlocked via hidden feature
+            ...(showDevTools ? [{ role: "toggleDevTools" as const }] : []),
             { type: "separator" },
             { role: "resetZoom" },
             { role: "zoomIn" },
@@ -652,6 +767,20 @@ if (gotTheLock) {
       Menu.setApplicationMenu(Menu.buildFromTemplate(template))
     }
 
+    // macOS: Set dock menu (right-click on dock icon)
+    if (process.platform === "darwin") {
+      const dockMenu = Menu.buildFromTemplate([
+        {
+          label: "New Window",
+          click: () => {
+            console.log("[Dock] New Window clicked")
+            createWindow()
+          },
+        },
+      ])
+      app.dock.setMenu(dockMenu)
+    }
+
     // Set update state and rebuild menu
     const setUpdateAvailable = (available: boolean, version?: string) => {
       updateAvailable = available
@@ -659,14 +788,25 @@ if (gotTheLock) {
       buildMenu()
     }
 
+    // Unlock devtools and rebuild menu (called from renderer via IPC)
+    const unlockDevTools = () => {
+      if (!devToolsUnlocked) {
+        devToolsUnlocked = true
+        console.log("[App] DevTools unlocked via hidden feature")
+        buildMenu()
+      }
+    }
+
     // Expose setUpdateAvailable globally for auto-updater
     ;(global as any).__setUpdateAvailable = setUpdateAvailable
+    // Expose unlockDevTools globally for IPC handler
+    ;(global as any).__unlockDevTools = unlockDevTools
 
     // Build initial menu
     buildMenu()
 
-    // Initialize auth manager
-    authManager = new AuthManager(!!process.env.ELECTRON_RENDERER_URL)
+    // Initialize auth manager (uses singleton from auth-manager module)
+    authManager = initAuthManager(!!process.env.ELECTRON_RENDERER_URL)
     console.log("[App] Auth manager initialized")
 
     // Initialize analytics after auth manager so we can identify user
@@ -719,9 +859,9 @@ if (gotTheLock) {
 
     // Initialize auto-updater (production only)
     if (app.isPackaged) {
-      await initAutoUpdater(getWindow)
+      await initAutoUpdater(getAllWindows)
       // Setup update check on window focus (instead of periodic interval)
-      setupFocusUpdateCheck(getWindow)
+      setupFocusUpdateCheck(getAllWindows)
       // Check for updates 5 seconds after startup (force to bypass interval check)
       setTimeout(() => {
         checkForUpdates(true)
@@ -738,6 +878,9 @@ if (gotTheLock) {
         console.error("[App] MCP warmup failed:", error)
       }
     }, 3000)
+
+    // Handle directory argument from CLI (e.g., `1code /path/to/project`)
+    parseLaunchDirectory()
 
     // Handle deep link from app launch (Windows/Linux)
     const deepLinkUrl = process.argv.find((arg) =>

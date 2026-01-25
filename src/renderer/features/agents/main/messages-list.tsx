@@ -286,6 +286,7 @@ export function useStreamingStatus() {
 interface MessageItemWrapperProps {
   messageId: string
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   onUrlClick?: (url: string) => void
@@ -358,12 +359,14 @@ function useIsStreaming() {
 const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
   messageId,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
   onUrlClick,
 }: {
   messageId: string
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   onUrlClick?: (url: string) => void
@@ -380,6 +383,7 @@ const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
       isStreaming={false}
       status="ready"
       subChatId={subChatId}
+      chatId={chatId}
       isMobile={isMobile}
       sandboxSetupStatus={sandboxSetupStatus}
       onUrlClick={onUrlClick}
@@ -392,12 +396,14 @@ const NonStreamingMessageItem = memo(function NonStreamingMessageItem({
 const StreamingMessageItem = memo(function StreamingMessageItem({
   messageId,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
   onUrlClick,
 }: {
   messageId: string
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   onUrlClick?: (url: string) => void
@@ -418,6 +424,7 @@ const StreamingMessageItem = memo(function StreamingMessageItem({
       isStreaming={isStreaming}
       status={status}
       subChatId={subChatId}
+      chatId={chatId}
       isMobile={isMobile}
       sandboxSetupStatus={sandboxSetupStatus}
       onUrlClick={onUrlClick}
@@ -475,6 +482,7 @@ function useMessageWithLastStatus(messageId: string) {
 export const MessageItemWrapper = memo(function MessageItemWrapper({
   messageId,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
   onUrlClick,
@@ -491,6 +499,7 @@ export const MessageItemWrapper = memo(function MessageItemWrapper({
       <StreamingMessageItem
         messageId={messageId}
         subChatId={subChatId}
+        chatId={chatId}
         isMobile={isMobile}
         sandboxSetupStatus={sandboxSetupStatus}
         onUrlClick={onUrlClick}
@@ -503,9 +512,10 @@ export const MessageItemWrapper = memo(function MessageItemWrapper({
     <NonStreamingMessageItem
       messageId={messageId}
       subChatId={subChatId}
-      onUrlClick={onUrlClick}
+      chatId={chatId}
       isMobile={isMobile}
       sandboxSetupStatus={sandboxSetupStatus}
+      onUrlClick={onUrlClick}
     />
   )
 })
@@ -522,6 +532,7 @@ export const MessageItemWrapper = memo(function MessageItemWrapper({
 interface MemoizedAssistantMessagesProps {
   assistantMsgIds: string[]
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   onUrlClick?: (url: string) => void
@@ -545,6 +556,7 @@ function areMemoizedAssistantMessagesEqual(
 
   // Also check static props
   if (prev.subChatId !== next.subChatId) return false
+  if (prev.chatId !== next.chatId) return false
   if (prev.isMobile !== next.isMobile) return false
   if (prev.sandboxSetupStatus !== next.sandboxSetupStatus) return false
   if (prev.onUrlClick !== next.onUrlClick) return false
@@ -555,6 +567,7 @@ function areMemoizedAssistantMessagesEqual(
 export const MemoizedAssistantMessages = memo(function MemoizedAssistantMessages({
   assistantMsgIds,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
   onUrlClick,
@@ -570,6 +583,7 @@ export const MemoizedAssistantMessages = memo(function MemoizedAssistantMessages
           key={id}
           messageId={id}
           subChatId={subChatId}
+          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
           onUrlClick={onUrlClick}
@@ -728,6 +742,7 @@ export function useMessageGroups() {
 
 interface MessagesListProps {
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   onUrlClick?: (url: string) => void
@@ -735,6 +750,7 @@ interface MessagesListProps {
 
 export const MessagesList = memo(function MessagesList({
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
   onUrlClick,
@@ -748,6 +764,7 @@ export const MessagesList = memo(function MessagesList({
           key={id}
           messageId={id}
           subChatId={subChatId}
+          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
           onUrlClick={onUrlClick}

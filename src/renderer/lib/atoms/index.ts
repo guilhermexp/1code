@@ -238,6 +238,14 @@ export const customClaudeConfigAtom = atomWithStorage<CustomClaudeConfig>(
   { getOnInit: true },
 )
 
+// OpenAI API key for voice transcription (for users without paid subscription)
+export const openaiApiKeyAtom = atomWithStorage<string>(
+  "agents:openai-api-key",
+  "",
+  undefined,
+  { getOnInit: true },
+)
+
 // New: Model profiles storage
 export const modelProfilesAtom = atomWithStorage<ModelProfile[]>(
   "agents:model-profiles",
@@ -399,20 +407,20 @@ export const analyticsOptOutAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
-// Preferences - Disable Co-Authored-By Attribution
-// When true, Claude will not add "Co-authored-by: Claude" to git commits
-export const disableCoAuthoredByAtom = atomWithStorage<boolean>(
-  "preferences:disable-coauthored-by",
-  false, // Default to false (keep co-authored-by attribution)
-  undefined,
-  { getOnInit: true },
-)
-
 // Beta: Enable git features in diff sidebar (commit, staging, file selection)
 // When enabled, shows checkboxes for file selection and commit UI in diff sidebar
 // When disabled, shows simple file list with "Create PR" button
 export const betaGitFeaturesEnabledAtom = atomWithStorage<boolean>(
   "preferences:beta-git-features-enabled",
+  false, // Default OFF
+  undefined,
+  { getOnInit: true },
+)
+
+// Beta: Enable Kanban board view
+// When enabled, shows Kanban button in sidebar to view workspaces as a board
+export const betaKanbanEnabledAtom = atomWithStorage<boolean>(
+  "preferences:beta-kanban-enabled",
   false, // Default OFF
   undefined,
   { getOnInit: true },
@@ -425,6 +433,16 @@ export type CtrlTabTarget = "workspaces" | "agents"
 export const ctrlTabTargetAtom = atomWithStorage<CtrlTabTarget>(
   "preferences:ctrl-tab-target",
   "workspaces", // Default: Ctrl+Tab switches workspaces, Opt+Ctrl+Tab switches agents
+  undefined,
+  { getOnInit: true },
+)
+
+// Preferences - Auto-advance after archive
+// Controls where to navigate after archiving a workspace
+export type AutoAdvanceTarget = "next" | "previous" | "close"
+export const autoAdvanceTargetAtom = atomWithStorage<AutoAdvanceTarget>(
+  "preferences:auto-advance-target",
+  "next", // Default: go to next workspace
   undefined,
   { getOnInit: true },
 )
@@ -508,10 +526,33 @@ export const showWorkspaceIconAtom = atomWithStorage<boolean>(
 )
 
 /**
+ * Always expand to-do list
+ * When enabled, to-do lists are always shown expanded (full list view)
+ * When disabled (default), to-do lists start collapsed and can be expanded manually
+ */
+export const alwaysExpandTodoListAtom = atomWithStorage<boolean>(
+  "preferences:always-expand-todo-list",
+  false, // Collapsed by default
+  undefined,
+  { getOnInit: true },
+)
+
+/**
  * Cached full theme data for the selected theme
  * This is populated when a theme is selected and used for applying CSS variables
  */
 export const fullThemeDataAtom = atom<VSCodeFullTheme | null>(null)
+
+/**
+ * Imported themes from VS Code extensions
+ * Persisted in localStorage, loaded on app start
+ */
+export const importedThemesAtom = atomWithStorage<VSCodeFullTheme[]>(
+  "preferences:imported-themes",
+  [],
+  undefined,
+  { getOnInit: true },
+)
 
 /**
  * All available full themes (built-in + imported + discovered)
@@ -682,3 +723,11 @@ export const sessionInfoAtom = atomWithStorage<SessionInfo | null>(
   undefined,
   { getOnInit: true },
 )
+
+// ============================================
+// DEV TOOLS UNLOCK (Hidden feature)
+// ============================================
+
+// DevTools unlock state (hidden feature - click Beta tab 5 times to enable)
+// Persisted per-session only (not in localStorage for security)
+export const devToolsUnlockedAtom = atom<boolean>(false)

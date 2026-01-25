@@ -31,6 +31,7 @@ import { extractTextMentions, TextMentionBlocks } from "../mentions/render-file-
 interface IsolatedMessageGroupProps {
   userMsgId: string
   subChatId: string
+  chatId: string
   isMobile: boolean
   sandboxSetupStatus: "cloning" | "ready" | "error"
   stickyTopClass: string
@@ -61,6 +62,7 @@ function areGroupPropsEqual(
   return (
     prev.userMsgId === next.userMsgId &&
     prev.subChatId === next.subChatId &&
+    prev.chatId === next.chatId &&
     prev.isMobile === next.isMobile &&
     prev.sandboxSetupStatus === next.sandboxSetupStatus &&
     prev.stickyTopClass === next.stickyTopClass &&
@@ -77,6 +79,7 @@ function areGroupPropsEqual(
 export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   userMsgId,
   subChatId,
+  chatId,
   isMobile,
   sandboxSetupStatus,
   stickyTopClass,
@@ -95,6 +98,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   const isStreaming = useAtomValue(isStreamingAtom)
 
   // Extract user message content
+  // Note: file-content parts are hidden from UI but sent to agent
   const rawTextContent =
     userMsg?.parts
       ?.filter((p: any) => p.type === "text")
@@ -195,6 +199,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
         <MemoizedAssistantMessages
           assistantMsgIds={assistantIds}
           subChatId={subChatId}
+          chatId={chatId}
           isMobile={isMobile}
           sandboxSetupStatus={sandboxSetupStatus}
           onUrlClick={onUrlClick}

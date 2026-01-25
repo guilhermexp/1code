@@ -1,14 +1,14 @@
 import { useAtom } from "jotai"
 import { ChevronLeft, ChevronRight, FolderOpen, X } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import {
   EyeOpenFilledIcon,
   ProfileIconFilled,
   SlidersFilledIcon
 } from "../../icons"
-import { agentsSettingsDialogActiveTabAtom, type SettingsTab } from "../../lib/atoms"
+import { agentsSettingsDialogActiveTabAtom, devToolsUnlockedAtom, type SettingsTab } from "../../lib/atoms"
 import { trpc } from "../../lib/trpc"
 import { cn } from "../../lib/utils"
 import { BrainFilledIcon, BugFilledIcon, CustomAgentIconFilled, FlaskFilledIcon, KeyboardFilledIcon, OriginalMCPIcon, SkillIconFilled } from "../ui/icons"
@@ -23,6 +23,35 @@ import { AgentsPreferencesTab } from "./settings-tabs/agents-preferences-tab"
 import { AgentsProfileTab } from "./settings-tabs/agents-profile-tab"
 import { AgentsProjectWorktreeTab } from "./settings-tabs/agents-project-worktree-tab"
 import { AgentsSkillsTab } from "./settings-tabs/agents-skills-tab"
+
+// GitHub avatar icon with loading placeholder
+function GitHubAvatarIcon({ gitOwner, className }: { gitOwner: string; className?: string }) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [hasError, setHasError] = useState(false)
+
+  const handleLoad = useCallback(() => setIsLoaded(true), [])
+  const handleError = useCallback(() => setHasError(true), [])
+
+  if (hasError) {
+    return <FolderOpen className={cn("text-muted-foreground flex-shrink-0", className)} />
+  }
+
+  return (
+    <div className={cn("relative flex-shrink-0", className)}>
+      {/* Placeholder background while loading */}
+      {!isLoaded && (
+        <div className="absolute inset-0 rounded-sm bg-muted" />
+      )}
+      <img
+        src={`https://github.com/${gitOwner}.png?size=64`}
+        alt={gitOwner}
+        className={cn("rounded-sm flex-shrink-0", className, isLoaded ? 'opacity-100' : 'opacity-0')}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
+    </div>
+  )
+}
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -41,8 +70,11 @@ function useIsNarrowScreen(): boolean {
   return isNarrow
 }
 
-// Check if we're in development mode
-const isDevelopment = process.env.NODE_ENV === "development"
+// Check if we're in development mode (use import.meta.env.DEV for Vite)
+const isDevelopment = import.meta.env.DEV
+
+// Clicks required to unlock devtools in production
+const DEVTOOLS_UNLOCK_CLICKS = 5
 
 interface AgentsSettingsDialogProps {
   isOpen: boolean
@@ -83,8 +115,8 @@ const MAIN_TABS = [
   },
 ]
 
-// Advanced/experimental tabs
-const ADVANCED_TABS = [
+// Advanced/experimental tabs (base - without Debug)
+const ADVANCED_TABS_BASE = [
   {
     id: "skills" as SettingsTab,
     label: "Skills",
@@ -109,18 +141,15 @@ const ADVANCED_TABS = [
     icon: FlaskFilledIcon,
     description: "Experimental features",
   },
-  // Debug tab - always shown in desktop for development
-  ...(isDevelopment
-    ? [
-        {
-          id: "debug" as SettingsTab,
-          label: "Debug",
-          icon: BugFilledIcon,
-          description: "Test first-time user experience",
-        },
-      ]
-    : []),
 ]
+
+// Debug tab definition
+const DEBUG_TAB = {
+  id: "debug" as SettingsTab,
+  label: "Debug",
+  icon: BugFilledIcon,
+  description: "Test first-time user experience",
+}
 
 interface TabButtonProps {
   tab: {
@@ -187,9 +216,14 @@ export function AgentsSettingsDialog({
   onClose,
 }: AgentsSettingsDialogProps) {
   const [activeTab, setActiveTab] = useAtom(agentsSettingsDialogActiveTabAtom)
+  const [devToolsUnlocked, setDevToolsUnlocked] = useAtom(devToolsUnlockedAtom)
   const [mounted, setMounted] = useState(false)
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
   const isNarrowScreen = useIsNarrowScreen()
+
+  // Beta tab click counter for unlocking devtools
+  const betaClickCountRef = useRef(0)
+  const betaClickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Get projects list for dynamic tabs
   const { data: projects } = trpc.projects.list.useQuery()
@@ -204,26 +238,30 @@ export function AgentsSettingsDialog({
       id: `project-${project.id}` as SettingsTab,
       label: project.name,
       icon: (project.gitOwner && project.gitProvider === 'github')
-        ? (() => {
-            const GitHubIcon = ({ className }: { className?: string }) => (
-              <img
-                src={`https://github.com/${project.gitOwner}.png?size=64`}
-                alt={project.gitOwner ?? ''}
-                className={cn("rounded-sm flex-shrink-0", className)}
-              />
-            )
-            return GitHubIcon
-          })()
+        ? ({ className }: { className?: string }) => (
+            <GitHubAvatarIcon gitOwner={project.gitOwner!} className={className} />
+          )
         : FolderOpen,
       description: `Worktree setup for ${project.name}`,
       projectId: project.id,
     }))
   }, [projects])
 
+  // Show debug tab if in development OR if devtools are unlocked
+  const showDebugTab = isDevelopment || devToolsUnlocked
+
+  // Build advanced tabs with optional debug tab
+  const ADVANCED_TABS = useMemo(() => {
+    if (showDebugTab) {
+      return [...ADVANCED_TABS_BASE, DEBUG_TAB]
+    }
+    return ADVANCED_TABS_BASE
+  }, [showDebugTab])
+
   // All tabs combined for lookups
   const ALL_TABS = useMemo(
     () => [...MAIN_TABS, ...ADVANCED_TABS, ...projectTabs],
-    [projectTabs]
+    [ADVANCED_TABS, projectTabs]
   )
 
   // Helper to get tab label from tab id
@@ -269,6 +307,30 @@ export function AgentsSettingsDialog({
   }, [])
 
   const handleTabClick = (tabId: SettingsTab) => {
+    // Handle Beta tab clicks for devtools unlock
+    // Works in both dev and production - the unlock just reveals the Debug tab
+    if (tabId === "beta" && !devToolsUnlocked) {
+      betaClickCountRef.current++
+      console.log(`[Settings] Beta click ${betaClickCountRef.current}/${DEVTOOLS_UNLOCK_CLICKS}`)
+
+      // Reset counter after 2 seconds of no clicks
+      if (betaClickTimeoutRef.current) {
+        clearTimeout(betaClickTimeoutRef.current)
+      }
+      betaClickTimeoutRef.current = setTimeout(() => {
+        betaClickCountRef.current = 0
+      }, 2000)
+
+      // Unlock devtools after required clicks
+      if (betaClickCountRef.current >= DEVTOOLS_UNLOCK_CLICKS) {
+        setDevToolsUnlocked(true)
+        betaClickCountRef.current = 0
+        // Notify main process to rebuild menu with DevTools option
+        window.desktopApi?.unlockDevTools()
+        console.log("[Settings] DevTools unlocked!")
+      }
+    }
+
     setActiveTab(tabId)
     if (isNarrowScreen) {
       setShowContent(true)
@@ -303,7 +365,7 @@ export function AgentsSettingsDialog({
       case "beta":
         return <AgentsBetaTab />
       case "debug":
-        return isDevelopment ? <AgentsDebugTab /> : null
+        return showDebugTab ? <AgentsDebugTab /> : null
       default:
         return null
     }

@@ -5,7 +5,9 @@ import { Toaster } from "sonner"
 import { TooltipProvider } from "./components/ui/tooltip"
 import { TRPCProvider } from "./contexts/TRPCProvider"
 import { I18nProvider } from "./contexts/I18nProvider"
-import { selectedProjectAtom } from "./features/agents/atoms"
+import { WindowProvider, getInitialWindowParams } from "./contexts/WindowContext"
+import { selectedProjectAtom, selectedAgentChatIdAtom } from "./features/agents/atoms"
+import { useAgentSubChatStore } from "./features/agents/stores/sub-chat-store"
 import { AgentsLayout } from "./features/layout/agents-layout"
 import {
   AnthropicOnboardingPage,
@@ -46,8 +48,31 @@ function AppContent() {
   const anthropicOnboardingCompleted = useAtomValue(
     anthropicOnboardingCompletedAtom
   )
+  const setAnthropicOnboardingCompleted = useSetAtom(anthropicOnboardingCompletedAtom)
   const apiKeyOnboardingCompleted = useAtomValue(apiKeyOnboardingCompletedAtom)
+  const setApiKeyOnboardingCompleted = useSetAtom(apiKeyOnboardingCompletedAtom)
   const selectedProject = useAtomValue(selectedProjectAtom)
+  const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
+  const { setActiveSubChat, addToOpenSubChats, setChatId } = useAgentSubChatStore()
+
+  // Apply initial window params (chatId/subChatId) when opening via "Open in new window"
+  useEffect(() => {
+    const params = getInitialWindowParams()
+    if (params.chatId) {
+      console.log("[App] Opening chat from window params:", params.chatId, params.subChatId)
+      setSelectedChatId(params.chatId)
+      setChatId(params.chatId)
+      if (params.subChatId) {
+        addToOpenSubChats(params.subChatId)
+        setActiveSubChat(params.subChatId)
+      }
+    }
+  }, [setSelectedChatId, setChatId, addToOpenSubChats, setActiveSubChat])
+
+  // Check if user has existing CLI config (API key or proxy)
+  // Based on PR #29 by @sa4hnd
+  const { data: cliConfig, isLoading: isLoadingCliConfig } =
+    trpc.claudeCode.hasExistingCliConfig.useQuery()
 
   // Migration: If user already completed Anthropic onboarding but has no billing method set,
   // automatically set it to "claude-subscription" (legacy users before billing method was added)
@@ -56,6 +81,16 @@ function AppContent() {
       setBillingMethod("claude-subscription")
     }
   }, [billingMethod, anthropicOnboardingCompleted, setBillingMethod])
+
+  // Auto-skip onboarding if user has existing CLI config (API key or proxy)
+  // This allows users with ANTHROPIC_API_KEY to use the app without OAuth
+  useEffect(() => {
+    if (cliConfig?.hasConfig && !billingMethod) {
+      console.log("[App] Detected existing CLI config, auto-completing onboarding")
+      setBillingMethod("api-key")
+      setApiKeyOnboardingCompleted(true)
+    }
+  }, [cliConfig?.hasConfig, billingMethod, setBillingMethod, setApiKeyOnboardingCompleted])
 
   // Fetch projects to validate selectedProject exists
   const { data: projects, isLoading: isLoadingProjects } =
@@ -137,8 +172,9 @@ export function App() {
   }, [])
 
   return (
-    <JotaiProvider store={appStore}>
-      <I18nProvider>
+    <WindowProvider>
+      <JotaiProvider store={appStore}>
+        <I18nProvider>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <VSCodeThemeProvider>
             <TooltipProvider delayDuration={100}>
@@ -154,7 +190,8 @@ export function App() {
             </TooltipProvider>
           </VSCodeThemeProvider>
         </ThemeProvider>
-      </I18nProvider>
-    </JotaiProvider>
+        </I18nProvider>
+      </JotaiProvider>
+    </WindowProvider>
   )
 }

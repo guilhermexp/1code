@@ -21,7 +21,7 @@ import { bringToFront } from './window';
  */
 export async function fetchMcpTools(
   serverUrl: string,
-  accessToken?: string
+  headers?: Record<string, string>
 ): Promise<string[]> {
   let client: Client | null = null;
   let transport: StreamableHTTPClientTransport | null = null;
@@ -33,10 +33,8 @@ export async function fetchMcpTools(
     });
 
     const requestInit: RequestInit = {};
-    if (accessToken) {
-      requestInit.headers = {
-        'Authorization': `Bearer ${accessToken}`,
-      };
+    if (headers && Object.keys(headers).length > 0) {
+      requestInit.headers = { ...headers };
     }
 
     transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
@@ -135,13 +133,14 @@ export async function fetchMcpToolsStdio(config: {
   }
 }
 
-const IS_DEV = !!process.env.ELECTRON_RENDERER_URL;
+import { AUTH_SERVER_PORT, IS_DEV } from '../constants';
+
 const OAUTH_TIMEOUT_MS = 5 * 60 * 1000;
 
 function getMcpOAuthRedirectUri(): string {
   return IS_DEV
-    ? 'http://localhost:21321/mcp-oauth/callback'
-    : 'http://127.0.0.1:21321/mcp-oauth/callback';
+    ? `http://localhost:${AUTH_SERVER_PORT}/callback`
+    : `http://127.0.0.1:${AUTH_SERVER_PORT}/callback`;
 }
 
 interface PendingOAuth {
@@ -150,6 +149,7 @@ interface PendingOAuth {
   codeVerifier: string;
   tokenEndpoint: string;
   clientId: string;
+  clientSecret?: string;
   redirectUri: string;
   resolve: (result: { success: boolean; error?: string }) => void;
   timeoutId: NodeJS.Timeout;
@@ -170,7 +170,7 @@ export async function startMcpOAuth(
   const serverConfig = getMcpServerConfig(config, projectPath, serverName);
 
   if (!serverConfig?.url) {
-    throw new Error(`MCP server "${serverName}" URL not configured`);
+    return { success: false, error: `MCP server "${serverName}" URL not configured` };
   }
 
   // 2. Use CraftOAuth for OAuth logic
@@ -181,7 +181,16 @@ export async function startMcpOAuth(
   );
 
   // 3. Start OAuth flow (fetches metadata from .well-known, then gets auth URL)
-  const { authUrl, state, codeVerifier, tokenEndpoint, clientId } = await oauth.startAuthFlow();
+  let authFlowResult;
+  try {
+    authFlowResult = await oauth.startAuthFlow();
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[MCP OAuth] Failed to start auth flow: ${msg}`);
+    return { success: false, error: msg };
+  }
+
+  const { authUrl, state, codeVerifier, tokenEndpoint, clientId, clientSecret } = authFlowResult;
 
   // 4. Store pending flow and wait for callback
   return new Promise((resolve) => {
@@ -196,6 +205,7 @@ export async function startMcpOAuth(
       codeVerifier,
       tokenEndpoint,
       clientId,
+      clientSecret,
       redirectUri,
       resolve,
       timeoutId,
@@ -238,7 +248,8 @@ export async function handleMcpOAuthCallback(code: string, state: string): Promi
       code,
       pending.codeVerifier,
       pending.tokenEndpoint,
-      pending.clientId
+      pending.clientId,
+      pending.clientSecret
     );
 
     // 3. Save to ~/.claude.json
