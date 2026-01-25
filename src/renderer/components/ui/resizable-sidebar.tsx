@@ -370,7 +370,7 @@ export function ResizableSidebar({
               duration: isResizing ? 0 : animationDuration,
               ease: [0.4, 0, 0.2, 1],
             }}
-            className={`bg-transparent flex flex-col text-xs h-full relative ${className}`}
+            className={`bg-transparent flex flex-col text-xs h-full relative flex-shrink-0 ${className}`}
             style={{ minWidth: minWidth, overflow: "hidden", ...style }}
             {...(dataAttributes ? Object.fromEntries(
               Object.entries(dataAttributes).map(([key, value]) => [`data-${key}`, value])
