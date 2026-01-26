@@ -4222,24 +4222,6 @@ export function ChatView({
   const [isPreviewSidebarOpen, setIsPreviewSidebarOpen] = useAtom(
     agentsPreviewSidebarOpenAtom,
   )
-
-  // Calculate max width for preview sidebar based on window width
-  // Ensures chat panel always has at least 350px (its minWidth)
-  const [previewMaxWidth, setPreviewMaxWidth] = useState(800)
-  useEffect(() => {
-    const calculateMaxWidth = () => {
-      const windowWidth = window.innerWidth
-      const minChatWidth = 350
-      const buffer = 50 // Safety margin
-      const maxWidth = Math.max(350, windowWidth - minChatWidth - buffer)
-      setPreviewMaxWidth(maxWidth)
-    }
-
-    calculateMaxWidth()
-    window.addEventListener("resize", calculateMaxWidth)
-    return () => window.removeEventListener("resize", calculateMaxWidth)
-  }, [])
-
   // Left sidebar control - used to auto-close when preview opens
   const setLeftSidebarOpen = useSetAtom(agentsSidebarOpenAtom)
   // Custom preview URL per chat (temporary, not persisted)
@@ -6455,7 +6437,6 @@ Make sure to preserve all functionality from both branches when resolving confli
             onClose={() => setIsPreviewSidebarOpen(false)}
             widthAtom={agentsPreviewSidebarWidthAtom}
             minWidth={350}
-            maxWidth={previewMaxWidth}
             side="right"
             animationDuration={0}
             initialWidth={0}
