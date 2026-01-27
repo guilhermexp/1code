@@ -1,3 +1,6 @@
+// Why Did You Render - MUST be first import (before React)
+import "./wdyr"
+
 // Sentry disabled - not using error tracking in this fork
 // To re-enable, uncomment and ensure MAIN_VITE_SENTRY_DSN is configured
 // if (import.meta.env.PROD) {
