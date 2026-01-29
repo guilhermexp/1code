@@ -58,6 +58,7 @@ import {
 } from "react"
 import { flushSync } from "react-dom"
 import { toast } from "sonner"
+import { useShallow } from "zustand/react/shallow"
 import type { FileStatus } from "../../../../shared/changes-types"
 import { getQueryClient } from "../../../contexts/TRPCProvider"
 import { trackMessageSent } from "../../../lib/analytics"
@@ -72,21 +73,24 @@ import {
   selectedOllamaModelAtom,
   soundNotificationsEnabledAtom
 } from "../../../lib/atoms"
-import { useRemoteChat } from "../../../lib/hooks/use-remote-chats"
-import { remoteApi } from "../../../lib/remote-api"
 import { useFileChangeListener, useGitWatcher } from "../../../lib/hooks/use-file-change-listener"
+import { useRemoteChat } from "../../../lib/hooks/use-remote-chats"
+import { useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 import { appStore } from "../../../lib/jotai-store"
 import { api } from "../../../lib/mock-api"
 import { trpc, trpcClient } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
-import { BUILTIN_SLASH_COMMANDS } from "../commands"
 import { isDesktopApp } from "../../../lib/utils/platform"
-import { useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 import { ChangesPanel } from "../../changes"
 import { DiffCenterPeekDialog } from "../../changes/components/diff-center-peek-dialog"
 import { DiffFullPageView } from "../../changes/components/diff-full-page-view"
 import { DiffSidebarHeader } from "../../changes/components/diff-sidebar-header"
 import { getStatusIndicator } from "../../changes/utils/status"
+import {
+  detailsSidebarOpenAtom,
+  unifiedSidebarEnabledAtom,
+} from "../../details-sidebar/atoms"
+import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
 import { terminalSidebarOpenAtomFamily } from "../../terminal/atoms"
 import { TerminalSidebar } from "../../terminal/terminal-sidebar"
 import {
@@ -104,6 +108,7 @@ import {
   currentPlanPathAtomFamily,
   diffSidebarOpenAtomFamily,
   diffViewDisplayModeAtom,
+  expiredUserQuestionsAtom,
   filteredDiffFilesAtom,
   filteredSubChatIdAtom,
   isCreatingPrAtom,
@@ -112,14 +117,13 @@ import {
   loadingSubChatsAtom,
   MODEL_ID_MAP,
   pendingAuthRetryMessageAtom,
-  pendingConflictResolutionMessageAtom,
   pendingBuildPlanSubChatIdAtom,
+  pendingConflictResolutionMessageAtom,
   pendingPlanApprovalsAtom,
-  planEditRefetchTriggerAtomFamily,
-  workspaceDiffCacheAtomFamily,
   pendingPrMessageAtom,
   pendingReviewMessageAtom,
   pendingUserQuestionsAtom,
+  planEditRefetchTriggerAtomFamily,
   planSidebarOpenAtomFamily,
   previewCustomUrlAtomFamily,
   QUESTIONS_SKIPPED_MESSAGE,
@@ -130,10 +134,11 @@ import {
   subChatFilesAtom,
   subChatModeAtomFamily,
   undoStackAtom,
-  openLocallyChatIdAtom,
+  workspaceDiffCacheAtomFamily,
   type AgentMode,
   type SelectedCommit
 } from "../atoms"
+import { BUILTIN_SLASH_COMMANDS } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
 import { OpenLocallyDialog } from "../components/open-locally-dialog"
 import { PreviewSetupHoverCard } from "../components/preview-setup-hover-card"
@@ -145,15 +150,14 @@ import { useChangedFilesTracking } from "../hooks/use-changed-files-tracking"
 import { useDesktopNotifications } from "../hooks/use-desktop-notifications"
 import { useFocusInputOnEnter } from "../hooks/use-focus-input-on-enter"
 import { useHaptic } from "../hooks/use-haptic"
-import { useTextContextSelection } from "../hooks/use-text-context-selection"
 import { usePastedTextFiles } from "../hooks/use-pasted-text-files"
+import { useTextContextSelection } from "../hooks/use-text-context-selection"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
 import {
   clearSubChatDraft,
   getSubChatDraftFull
 } from "../lib/drafts"
 import { IPCChatTransport } from "../lib/ipc-chat-transport"
-import { RemoteChatTransport } from "../lib/remote-chat-transport"
 import {
   createQueueItem,
   generateQueueId,
@@ -161,6 +165,7 @@ import {
   toQueuedImage,
   toQueuedTextContext,
 } from "../lib/queue-utils"
+import { RemoteChatTransport } from "../lib/remote-chat-transport"
 import {
   MENTION_PREFIXES,
   type AgentsMentionsEditorHandle,
@@ -204,11 +209,6 @@ import { autoRenameAgentChat } from "../utils/auto-rename"
 import { generateCommitToPrMessage, generatePrMessage, generateReviewMessage } from "../utils/pr-message"
 import { ChatInputArea } from "./chat-input-area"
 import { IsolatedMessagesSection } from "./isolated-messages-section"
-import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
-import {
-  detailsSidebarOpenAtom,
-  unifiedSidebarEnabledAtom,
-} from "../../details-sidebar/atoms"
 const clearSubChatSelectionAtom = atom(null, () => {})
 const isSubChatMultiSelectModeAtom = atom(false)
 const selectedSubChatIdsAtom = atom(new Set<string>())
@@ -2537,6 +2537,16 @@ const ChatViewInner = memo(function ChatViewInner({
   // Get pending questions for this specific subChat
   const pendingQuestions = pendingQuestionsMap.get(subChatId) ?? null
 
+  // Expired user questions (timed out but still answerable as normal messages)
+  const [expiredQuestionsMap, setExpiredQuestionsMap] = useAtom(
+    expiredUserQuestionsAtom,
+  )
+  const expiredQuestions = expiredQuestionsMap.get(subChatId) ?? null
+
+  // Unified display questions: prefer pending (live), fall back to expired
+  const displayQuestions = pendingQuestions ?? expiredQuestions
+  const isQuestionExpired = !pendingQuestions && !!expiredQuestions
+
   // Track whether chat input has content (for custom text with questions)
   const [inputHasContent, setInputHasContent] = useState(false)
 
@@ -2672,7 +2682,7 @@ const ChatViewInner = memo(function ChatViewInner({
     }
   }, [subChatId, lastAssistantMessage, isStreaming, pendingQuestions, setPendingQuestionsMap])
 
-  // Helper to clear pending question for this subChat (used in callbacks)
+  // Helper to clear pending and expired questions for this subChat (used in callbacks)
   const clearPendingQuestionCallback = useCallback(() => {
     setPendingQuestionsMap((current) => {
       if (current.has(subChatId)) {
@@ -2682,26 +2692,73 @@ const ChatViewInner = memo(function ChatViewInner({
       }
       return current
     })
-  }, [subChatId, setPendingQuestionsMap])
+    setExpiredQuestionsMap((current) => {
+      if (current.has(subChatId)) {
+        const newMap = new Map(current)
+        newMap.delete(subChatId)
+        return newMap
+      }
+      return current
+    })
+  }, [subChatId, setPendingQuestionsMap, setExpiredQuestionsMap])
+
+  // Shared helpers for question answer handlers
+  const formatAnswersAsText = useCallback(
+    (answers: Record<string, string>): string =>
+      Object.entries(answers)
+        .map(([question, answer]) => `${question}: ${answer}`)
+        .join("\n"),
+    [],
+  )
+
+  const clearInputAndDraft = useCallback(() => {
+    editorRef.current?.clear()
+    if (parentChatId) {
+      clearSubChatDraft(parentChatId, subChatId)
+    }
+  }, [parentChatId, subChatId])
+
+  const sendUserMessage = useCallback(async (text: string) => {
+    shouldAutoScrollRef.current = true
+    await sendMessageRef.current({
+      role: "user",
+      parts: [{ type: "text", text }],
+    })
+  }, [])
 
   // Handle answering questions
   const handleQuestionsAnswer = useCallback(
     async (answers: Record<string, string>) => {
-      if (!pendingQuestions) return
-      await trpcClient.claude.respondToolApproval.mutate({
-        toolUseId: pendingQuestions.toolUseId,
-        approved: true,
-        updatedInput: { questions: pendingQuestions.questions, answers },
-      })
-      clearPendingQuestionCallback()
+      if (!displayQuestions) return
+
+      if (isQuestionExpired) {
+        // Question timed out - send answers as a normal user message
+        clearPendingQuestionCallback()
+        await sendUserMessage(formatAnswersAsText(answers))
+      } else {
+        // Question is still live - use tool approval path
+        await trpcClient.claude.respondToolApproval.mutate({
+          toolUseId: displayQuestions.toolUseId,
+          approved: true,
+          updatedInput: { questions: displayQuestions.questions, answers },
+        })
+        clearPendingQuestionCallback()
+      }
     },
-    [pendingQuestions, clearPendingQuestionCallback],
+    [displayQuestions, isQuestionExpired, clearPendingQuestionCallback, sendUserMessage, formatAnswersAsText],
   )
 
   // Handle skipping questions
   const handleQuestionsSkip = useCallback(async () => {
-    if (!pendingQuestions) return
-    const toolUseId = pendingQuestions.toolUseId
+    if (!displayQuestions) return
+
+    if (isQuestionExpired) {
+      // Expired question - just clear the UI, no backend call needed
+      clearPendingQuestionCallback()
+      return
+    }
+
+    const toolUseId = displayQuestions.toolUseId
 
     // Clear UI immediately - don't wait for backend
     // This ensures dialog closes even if stream was already aborted
@@ -2717,7 +2774,7 @@ const ChatViewInner = memo(function ChatViewInner({
     } catch {
       // Stream likely already aborted - ignore
     }
-  }, [pendingQuestions, clearPendingQuestionCallback])
+  }, [displayQuestions, isQuestionExpired, clearPendingQuestionCallback])
 
   // Ref to prevent double submit of question answer
   const isSubmittingQuestionAnswerRef = useRef(false)
@@ -2725,7 +2782,7 @@ const ChatViewInner = memo(function ChatViewInner({
   // Handle answering questions with custom text from input (called on Enter in input)
   const handleSubmitWithQuestionAnswer = useCallback(
     async () => {
-      if (!pendingQuestions) return
+      if (!displayQuestions) return
       if (isSubmittingQuestionAnswerRef.current) return
       isSubmittingQuestionAnswerRef.current = true
 
@@ -2743,7 +2800,7 @@ const ChatViewInner = memo(function ChatViewInner({
 
         // 3. Add custom text to the last question as "Other"
         const lastQuestion =
-          pendingQuestions.questions[pendingQuestions.questions.length - 1]
+          displayQuestions.questions[displayQuestions.questions.length - 1]
         if (lastQuestion) {
           const existingAnswer = formattedAnswers[lastQuestion.question]
           if (existingAnswer) {
@@ -2754,51 +2811,49 @@ const ChatViewInner = memo(function ChatViewInner({
           }
         }
 
-        // 4. Submit tool response with all answers
-        await trpcClient.claude.respondToolApproval.mutate({
-          toolUseId: pendingQuestions.toolUseId,
-          approved: true,
-          updatedInput: {
-            questions: pendingQuestions.questions,
-            answers: formattedAnswers,
-          },
-        })
-        clearPendingQuestionCallback()
+        if (isQuestionExpired) {
+          // Expired: send user's custom text as-is (don't format)
+          clearPendingQuestionCallback()
+          clearInputAndDraft()
+          // await sendUserMessage(formatAnswersAsText(formattedAnswers))
+          await sendUserMessage(customText)
+        } else {
+          // Live: use existing tool approval flow
+          await trpcClient.claude.respondToolApproval.mutate({
+            toolUseId: displayQuestions.toolUseId,
+            approved: true,
+            updatedInput: {
+              questions: displayQuestions.questions,
+              answers: formattedAnswers,
+            },
+          })
+          clearPendingQuestionCallback()
 
-        // 5. Stop stream if currently streaming
-        if (isStreamingRef.current) {
-          agentChatStore.setManuallyAborted(subChatId, true)
-          await stopRef.current()
-          await new Promise((resolve) => setTimeout(resolve, 100))
+          // Stop stream if currently streaming
+          if (isStreamingRef.current) {
+            agentChatStore.setManuallyAborted(subChatId, true)
+            await stopRef.current()
+            await new Promise((resolve) => setTimeout(resolve, 100))
+          }
+
+          clearInputAndDraft()
+          await sendUserMessage(customText)
         }
-
-        // 6. Clear input
-        editorRef.current?.clear()
-        if (parentChatId) {
-          clearSubChatDraft(parentChatId, subChatId)
-        }
-
-        // 7. Send custom text as a new user message
-        shouldAutoScrollRef.current = true
-        await sendMessageRef.current({
-          role: "user",
-          parts: [{ type: "text", text: customText }],
-        })
       } finally {
         isSubmittingQuestionAnswerRef.current = false
       }
     },
-    [pendingQuestions, clearPendingQuestionCallback, subChatId, parentChatId],
+    [displayQuestions, isQuestionExpired, clearPendingQuestionCallback, clearInputAndDraft, sendUserMessage, formatAnswersAsText, subChatId],
   )
 
   // Memoize the callback to prevent ChatInputArea re-renders
-  // Only provide callback when there's a pending question for this subChat
+  // Only provide callback when there's a pending or expired question for this subChat
   const submitWithQuestionAnswerCallback = useMemo(
     () =>
-      pendingQuestions
+      displayQuestions
         ? handleSubmitWithQuestionAnswer
         : undefined,
-    [pendingQuestions, handleSubmitWithQuestionAnswer],
+    [displayQuestions, handleSubmitWithQuestionAnswer],
   )
 
   // Watch for pending auth retry message (after successful OAuth flow)
@@ -3091,8 +3146,8 @@ const ChatViewInner = memo(function ChatViewInner({
         )
 
         if (!isInsideOverlay && !hasOpenDialog) {
-          // If there are pending questions for this chat, skip them instead of stopping stream
-          if (pendingQuestions) {
+          // If there are pending/expired questions for this chat, skip/dismiss them instead of stopping stream
+          if (displayQuestions) {
             shouldSkipQuestions = true
           } else {
             shouldStop = true
@@ -3138,7 +3193,7 @@ const ChatViewInner = memo(function ChatViewInner({
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isActive, isStreaming, stop, subChatId, pendingQuestions, handleQuestionsSkip])
+  }, [isActive, isStreaming, stop, subChatId, displayQuestions, handleQuestionsSkip])
 
   // Keyboard shortcut: Enter to focus input when not already focused
   useFocusInputOnEnter(editorRef)
@@ -3306,6 +3361,16 @@ const ChatViewInner = memo(function ChatViewInner({
     if (sandboxSetupStatus !== "ready") {
       return
     }
+
+    // Clear any expired questions when user sends a new message
+    setExpiredQuestionsMap((current) => {
+      if (current.has(subChatId)) {
+        const newMap = new Map(current)
+        newMap.delete(subChatId)
+        return newMap
+      }
+      return current
+    })
 
     // Get value from uncontrolled editor
     const inputValue = editorRef.current?.getValue() || ""
@@ -3549,6 +3614,7 @@ const ChatViewInner = memo(function ChatViewInner({
     teamId,
     addToQueue,
     stripComponentMentions,
+    setExpiredQuestionsMap,
   ])
 
   // Queue handlers for sending queued messages
@@ -4070,14 +4136,13 @@ const ChatViewInner = memo(function ChatViewInner({
         </div>
       </div>
 
-      {/* User questions panel - shows when AskUserQuestion tool is called */}
-      {/* Only show if the pending question belongs to THIS sub-chat */}
-      {pendingQuestions && (
+      {/* User questions panel - shows for both live (pending) and expired (timed out) questions */}
+      {displayQuestions && (
         <div className="px-4 relative z-20">
           <div className="w-full px-2 max-w-2xl mx-auto">
             <AgentUserQuestion
               ref={questionRef}
-              pendingQuestions={pendingQuestions}
+              pendingQuestions={displayQuestions}
               onAnswer={handleQuestionsAnswer}
               onSkip={handleQuestionsSkip}
               hasCustomText={inputHasContent}
@@ -4087,7 +4152,7 @@ const ChatViewInner = memo(function ChatViewInner({
       )}
 
       {/* Stacked cards container - queue + status */}
-      {!pendingQuestions &&
+      {!displayQuestions &&
         (queue.length > 0 || changedFilesForSubChat.length > 0) && (
           <div className="px-2 -mb-6 relative z-10">
             <div className="w-full max-w-2xl mx-auto px-2">
@@ -4163,7 +4228,7 @@ const ChatViewInner = memo(function ChatViewInner({
         <ScrollToBottomButton
           containerRef={chatContainerRef}
           onScrollToBottom={scrollToBottom}
-          hasStackedCards={!pendingQuestions && (queue.length > 0 || changedFilesForSubChat.length > 0)}
+          hasStackedCards={!displayQuestions && (queue.length > 0 || changedFilesForSubChat.length > 0)}
           subChatId={subChatId}
           isActive={isActive}
         />
@@ -4207,10 +4272,10 @@ export function ChatView({
     [activeSubChatIdForMode],
   )
   const [subChatMode] = useAtom(subChatModeAtom)
-  // Current mode - use subChatMode when there's an active sub-chat, otherwise default to "agent"
-  const currentMode: AgentMode = activeSubChatIdForMode ? subChatMode : "agent"
-  // Default mode for new sub-chats
+  // Default mode for new sub-chats (used as fallback when no active sub-chat)
   const defaultAgentMode = useAtomValue(defaultAgentModeAtom)
+  // Current mode - use subChatMode when there's an active sub-chat, otherwise use user's default preference
+  const currentMode: AgentMode = activeSubChatIdForMode ? subChatMode : defaultAgentMode
 
   const isDesktop = useAtomValue(isDesktopAtom)
   const isFullscreen = useAtomValue(isFullscreenAtom)
@@ -4606,10 +4671,20 @@ export function ChatView({
     })
   }, [chatId, setUnseenChanges])
 
-  // Get sub-chat state from store (using getState() to avoid re-renders on state changes)
-  const activeSubChatId = useAgentSubChatStore.getState().activeSubChatId
-  const openSubChatIds = useAgentSubChatStore.getState().openSubChatIds
-  const pinnedSubChatIds = useAgentSubChatStore.getState().pinnedSubChatIds
+  // Get sub-chat state from store (reactive subscription for tabsToRender)
+  const {
+    activeSubChatId,
+    openSubChatIds,
+    pinnedSubChatIds,
+    allSubChats,
+  } = useAgentSubChatStore(
+    useShallow((state) => ({
+      activeSubChatId: state.activeSubChatId,
+      openSubChatIds: state.openSubChatIds,
+      pinnedSubChatIds: state.pinnedSubChatIds,
+      allSubChats: state.allSubChats,
+    }))
+  )
 
   // Clear sub-chat "unseen changes" indicator when sub-chat becomes active
   useEffect(() => {
@@ -4623,7 +4698,6 @@ export function ChatView({
       return prev
     })
   }, [activeSubChatId, setSubChatUnseenChanges])
-  const allSubChats = useAgentSubChatStore.getState().allSubChats
 
   // tRPC utils for optimistic cache updates
   const utils = api.useUtils()
@@ -4743,18 +4817,16 @@ export function ChatView({
   const tabsToRender = useMemo(() => {
     if (!activeSubChatId) return []
 
-    // Use agentSubChats from server (tRPC/remote API) as the authoritative source for validation.
-    // This fixes the race condition where:
-    // 1. setChatId resets allSubChats to [] but loads activeSubChatId from localStorage
-    // 2. tabsToRender was checking activeSubChatId against empty allSubChats → always failing
+    // Combine server data (agentSubChats) with local store (allSubChats) for validation.
+    // This handles:
+    // 1. Race condition where setChatId resets allSubChats but activeSubChatId loads from localStorage
+    // 2. Optimistic updates when creating new sub-chats (new sub-chat is in allSubChats but not in agentSubChats yet)
     //
-    // agentSubChats comes from the server and is the "truth" about which sub-chats exist.
-    // allSubChats in Zustand is only populated AFTER the init useEffect runs.
-    //
-    // For optimistic updates when creating new sub-chats, we fall back to allSubChats
-    // since the new sub-chat won't be in agentSubChats yet (tRPC query is stale).
-    const sourceForValidation = agentSubChats.length > 0 ? agentSubChats : allSubChats
-    const validSubChatIds = new Set(sourceForValidation.map(sc => sc.id))
+    // By combining both sources, we validate against all known sub-chats from both server and local state.
+    const validSubChatIds = new Set([
+      ...agentSubChats.map(sc => sc.id),
+      ...allSubChats.map(sc => sc.id),
+    ])
 
     // If active sub-chat doesn't belong to this workspace → return []
     // This prevents rendering sub-chats from another workspace during race condition
@@ -5572,7 +5644,7 @@ Make sure to preserve all functionality from both branches when resolving confli
       if (isRemoteChat && chatSandboxUrl) {
         // Remote sandbox chat: use HTTP SSE transport
         const subChatName = subChat?.name || "Chat"
-        const modelString = MODEL_ID_MAP[selectedModelId]
+        const modelString = MODEL_ID_MAP[selectedModelId] || MODEL_ID_MAP["opus"]
         console.log("[getOrCreateChat] Using RemoteChatTransport", { sandboxUrl: chatSandboxUrl, model: modelString })
         transport = new RemoteChatTransport({
           chatId,
@@ -5747,6 +5819,9 @@ Make sure to preserve all functionality from both branches when resolving confli
       mode: newSubChatMode,
     })
 
+    // Set the mode atomFamily for the new sub-chat (so currentMode reads correct value)
+    appStore.set(subChatModeAtomFamily(newId), newSubChatMode)
+
     // Add to open tabs and set as active
     store.addToOpenSubChats(newId)
     store.setActiveSubChat(newId)
@@ -5768,7 +5843,7 @@ Make sure to preserve all functionality from both branches when resolving confli
 
     if (isNewSubChatRemote && newSubChatSandboxUrl) {
       // Remote sandbox chat: use HTTP SSE transport
-      const modelString = MODEL_ID_MAP[selectedModelId]
+      const modelString = MODEL_ID_MAP[selectedModelId] || MODEL_ID_MAP["opus"]
       console.log("[createNewSubChat] Using RemoteChatTransport", { model: modelString })
       newSubChatTransport = new RemoteChatTransport({
         chatId,

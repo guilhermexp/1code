@@ -12,6 +12,7 @@ import { toast } from "sonner"
 import {
   agentsLoginModalOpenAtom,
   customClaudeConfigAtom,
+  enableTasksAtom,
   extendedThinkingEnabledAtom,
   historyEnabledAtom,
   sessionInfoAtom,
@@ -26,6 +27,7 @@ import { trpcClient } from "../../../lib/trpc"
 import {
   askUserQuestionResultsAtom,
   compactingSubChatsAtom,
+  expiredUserQuestionsAtom,
   lastSelectedModelIdAtom,
   MODEL_ID_MAP,
   pendingAuthRetryMessageAtom,
@@ -170,10 +172,11 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     // Using 32000 to stay safely under the 64000 max output tokens limit
     const maxThinkingTokens = thinkingEnabled ? 32_000 : undefined
     const historyEnabled = appStore.get(historyEnabledAtom)
+    const enableTasks = appStore.get(enableTasksAtom)
 
     // Read model selection dynamically (so model changes apply to existing chats)
     const selectedModelId = appStore.get(lastSelectedModelIdAtom)
-    const modelString = MODEL_ID_MAP[selectedModelId]
+    const modelString = MODEL_ID_MAP[selectedModelId] || MODEL_ID_MAP["opus"]
 
     const storedCustomConfig = appStore.get(
       customClaudeConfigAtom,
@@ -217,6 +220,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             ...(selectedOllamaModel && { selectedOllamaModel }),
             historyEnabled,
             offlineModeEnabled,
+            enableTasks,
             ...(images.length > 0 && { images }),
           },
           {
@@ -235,16 +239,31 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                   questions: chunk.questions,
                 })
                 appStore.set(pendingUserQuestionsAtom, newMap)
+
+                // Clear any expired question (new question replaces it)
+                const currentExpired = appStore.get(expiredUserQuestionsAtom)
+                if (currentExpired.has(this.config.subChatId)) {
+                  const newExpiredMap = new Map(currentExpired)
+                  newExpiredMap.delete(this.config.subChatId)
+                  appStore.set(expiredUserQuestionsAtom, newExpiredMap)
+                }
               }
 
-              // Handle AskUserQuestion timeout - clear pending question immediately
+              // Handle AskUserQuestion timeout - move to expired (keep UI visible)
               if (chunk.type === "ask-user-question-timeout") {
                 const currentMap = appStore.get(pendingUserQuestionsAtom)
                 const pending = currentMap.get(this.config.subChatId)
                 if (pending && pending.toolUseId === chunk.toolUseId) {
-                  const newMap = new Map(currentMap)
-                  newMap.delete(this.config.subChatId)
-                  appStore.set(pendingUserQuestionsAtom, newMap)
+                  // Remove from pending
+                  const newPendingMap = new Map(currentMap)
+                  newPendingMap.delete(this.config.subChatId)
+                  appStore.set(pendingUserQuestionsAtom, newPendingMap)
+
+                  // Move to expired (so UI keeps showing the question)
+                  const currentExpired = appStore.get(expiredUserQuestionsAtom)
+                  const newExpiredMap = new Map(currentExpired)
+                  newExpiredMap.set(this.config.subChatId, pending)
+                  appStore.set(expiredUserQuestionsAtom, newExpiredMap)
                 }
               }
 
@@ -306,6 +325,10 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                   newMap.delete(this.config.subChatId)
                   appStore.set(pendingUserQuestionsAtom, newMap)
                 }
+                // NOTE: Do NOT clear expired questions here. After a timeout,
+                // the agent continues and emits new chunks — that's expected.
+                // Expired questions should persist until the user answers,
+                // dismisses, or sends a new message.
               }
 
               // Handle authentication errors - show Claude login modal

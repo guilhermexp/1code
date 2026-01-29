@@ -1,6 +1,6 @@
 {
   "name": "21st-desktop",
-  "version": "0.0.48",
+  "version": "0.0.50",
   "private": true,
   "description": "1Code - UI for parallel work with AI agents",
   "author": {
@@ -20,9 +20,9 @@
     "dist": "electron-builder",
     "dist:manifest": "node scripts/generate-update-manifest.mjs",
     "dist:upload": "node scripts/upload-release.mjs",
-    "claude:download": "node scripts/download-claude-binary.mjs",
-    "claude:download:all": "node scripts/download-claude-binary.mjs --all",
-    "release": "rm -rf release && bun run claude:download && bun run build && bun run package:mac && bun run dist:manifest && ./scripts/upload-release-wrangler.sh",
+    "claude:download": "node scripts/download-claude-binary.mjs --version=2.1.22",
+    "claude:download:all": "node scripts/download-claude-binary.mjs --version=2.1.22 --all",
+    "release": "rm -rf release && bun i && bun run claude:download && bun run build && bun run package:mac && bun run dist:manifest && ./scripts/upload-release-wrangler.sh",
     "release:dev": "rm -rf release && bun run claude:download && bun run build && bun run package:mac:arm64",
     "sync:public": "./scripts/sync-to-public.sh",
     "icon:generate": "node scripts/generate-icon.mjs",
@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.14",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.12",
+    "@anthropic-ai/claude-agent-sdk": "0.2.22",
     "@git-diff-view/react": "^0.0.35",
     "@git-diff-view/shiki": "^0.0.36",
     "@modelcontextprotocol/sdk": "^1.25.3",
@@ -82,6 +82,7 @@
     "i18next": "^25.7.4",
     "i18next-browser-languagedetector": "^8.2.0",
     "jotai": "^2.11.1",
+    "jsonc-parser": "^3.3.1",
     "lucide-react": "^0.468.0",
     "mermaid": "^11.12.2",
     "motion": "^11.15.0",
