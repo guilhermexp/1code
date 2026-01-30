@@ -32,7 +32,7 @@ interface ResizableSidebarProps {
 const DEFAULT_MIN_WIDTH = 200
 const DEFAULT_MAX_WIDTH = 9999 // Effectively no limit - CSS constraints handle max width
 const DEFAULT_ANIMATION_DURATION = 0 // Disabled for performance
-const EXTENDED_HOVER_AREA_WIDTH = 8
+const EXTENDED_HOVER_AREA_WIDTH = 16
 
 export function ResizableSidebar({
   isOpen,

@@ -1,5 +1,5 @@
 import { useAtom } from "jotai"
-import { ChevronLeft, ChevronRight, FolderOpen, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, FolderOpen, Languages, X } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
@@ -22,6 +22,7 @@ import { AgentsModelsTab } from "./settings-tabs/agents-models-tab"
 import { AgentsPreferencesTab } from "./settings-tabs/agents-preferences-tab"
 import { AgentsProfileTab } from "./settings-tabs/agents-profile-tab"
 import { AgentsProjectWorktreeTab } from "./settings-tabs/agents-project-worktree-tab"
+import { AgentsLanguageTab } from "./settings-tabs/agents-language-tab"
 import { AgentsSkillsTab } from "./settings-tabs/agents-skills-tab"
 
 // GitHub avatar icon with loading placeholder
@@ -112,6 +113,12 @@ const MAIN_TABS = [
     label: "Models",
     icon: BrainFilledIcon,
     description: "Model overrides and Claude Code auth",
+  },
+  {
+    id: "language" as SettingsTab,
+    label: "Language",
+    icon: Languages,
+    description: "Application language",
   },
 ]
 
@@ -356,6 +363,8 @@ export function AgentsSettingsDialog({
         return <AgentsPreferencesTab />
       case "models":
         return <AgentsModelsTab />
+      case "language":
+        return <AgentsLanguageTab />
       case "skills":
         return <AgentsSkillsTab />
       case "agents":

@@ -855,7 +855,7 @@ export function AgentPreview({
                 height="100%"
                 style={{ border: "none" }}
                 title="Preview"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-top-navigation-by-user-activation"
                 allow="clipboard-write"
                 onLoad={handleIframeLoad}
                 onError={() => setIsLoaded(true)}
@@ -863,7 +863,7 @@ export function AgentPreview({
             </div>
             {/* Loading overlay */}
             {!isLoaded && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
+              <div className="absolute inset-0 flex items-center justify-center bg-background z-10 pointer-events-none">
                 <div className="w-6 h-6 animate-pulse">
                   <svg
                     width="100%"
@@ -942,7 +942,7 @@ export function AgentPreview({
                     border: "none",
                     borderRadius: viewportMode === "desktop" ? "8px" : "24px",
                   }}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-top-navigation-by-user-activation"
                   onLoad={handleIframeLoad}
                   title="Preview"
                   tabIndex={-1}
@@ -950,7 +950,7 @@ export function AgentPreview({
 
                 {/* Loading overlay */}
                 {!isLoaded && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-background z-10 rounded-[inherit]">
+                  <div className="absolute inset-0 flex items-center justify-center bg-background z-10 pointer-events-none rounded-[inherit]">
                     <div className="w-6 h-6 animate-pulse">
                       <svg
                         width="100%"

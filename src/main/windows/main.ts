@@ -297,6 +297,13 @@ function registerIpcHandlers(): void {
       (function() {
         try {
           console.log('[1code Inspector] Running in frame:', window.location.href);
+
+          // Skip injection on error pages or incomplete documents
+          if (window.location.href.startsWith('chrome-error://') || !document.documentElement) {
+            console.log('[1code Inspector] Skipping - invalid or incomplete document');
+            return false;
+          }
+
           const enabled = ${enabled};
 
           const postError = (type, error) => {
@@ -328,12 +335,17 @@ function registerIpcHandlers(): void {
           const insertStyles = () => {
             const href = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/styles.css';
             if (!document.querySelector('link[rel="stylesheet"][href*="react-grab"]')) {
+              const head = ensureHead();
+              if (!head) {
+                console.warn('[1code Inspector] No head element available, skipping styles');
+                return;
+              }
               const styleLink = document.createElement('link');
               styleLink.rel = 'stylesheet';
               styleLink.href = href;
               styleLink.onload = () => console.log('[1code Inspector] CSS loaded');
               styleLink.onerror = (e) => console.error('[1code Inspector] CSS failed to load', e);
-              ensureHead().appendChild(styleLink);
+              head.appendChild(styleLink);
             }
           };
 
@@ -424,7 +436,12 @@ function registerIpcHandlers(): void {
               console.error('[1code Inspector] Failed to load React Grab', error);
               postError('INSPECTOR_LOAD_ERROR', 'Failed to load React Grab script');
             };
-            ensureHead().appendChild(script);
+            const head = ensureHead();
+            if (!head) {
+              console.warn('[1code Inspector] No head element available, skipping script load');
+              return;
+            }
+            head.appendChild(script);
           };
 
           insertStyles();
@@ -890,7 +907,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
         modifiedCSP = addSources(modifiedCSP, "script-src", scriptSources)
         // For localhost, also allow WebSocket connections for hot reload
         const connectSources = isLocalhost
-          ? ["'self'", "ws://localhost:*", "ws://127.0.0.1:*", "http://localhost:*", "http://127.0.0.1:*", "https://cdn.jsdelivr.net", "https://unpkg.com"]
+          ? ["'self'", "ws://localhost:*", "ws://127.0.0.1:*", "http://localhost:*", "http://127.0.0.1:*", "https://cdn.jsdelivr.net", "https://unpkg.com", "https://www.react-grab.com"]
           : ["'self'", "https://cdn.jsdelivr.net", "https://unpkg.com"]
 
         modifiedCSP = addSources(modifiedCSP, "connect-src", connectSources)
@@ -914,7 +931,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
       console.log(`[CSP] No CSP found for localhost ${details.url}, injecting permissive CSP`)
       // Use standard PascalCase for the header
       responseHeaders["Content-Security-Policy"] = [
-        "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; connect-src *"
+        "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; connect-src * ws: wss:; worker-src * blob:"
       ]
     }
 

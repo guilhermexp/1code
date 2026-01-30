@@ -5002,9 +5002,10 @@ export function ChatView({
   const isQuickSetup = meta?.isQuickSetup || !meta?.sandboxConfig?.port
   const previewPort = meta?.sandboxConfig?.port ?? 3000
 
-  // Check if preview can be opened (sandbox with port exists and not quick setup, OR custom URL is set)
+  // Check if preview can be opened (sandbox with port exists and not quick setup, OR custom URL is set, OR local mode where user can set custom URL)
   const canOpenPreview = !!(
     customPreviewUrl ||
+    chatSourceMode === "local" ||
     (sandboxId && !isQuickSetup && meta?.sandboxConfig?.port)
   )
 
@@ -6459,7 +6460,6 @@ Make sure to preserve all functionality from both branches when resolving confli
                 {/* Open Preview Button - shows when preview is closed (desktop only, local mode only) */}
                 {!isMobileFullscreen &&
                   !isPreviewSidebarOpen &&
-                  sandboxId &&
                   chatSourceMode === "local" &&
                   (canOpenPreview ? (
                     <Tooltip delayDuration={500}>
@@ -6471,7 +6471,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                           className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
                           aria-label="Open preview"
                         >
-                          <IconOpenSidebarRight className="h-4 w-4" />
+                          <Globe className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Open preview</TooltipContent>
@@ -6486,7 +6486,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                           className="h-6 w-6 p-0 text-muted-foreground flex-shrink-0 rounded-md cursor-not-allowed pointer-events-none"
                           aria-label="Preview not available"
                         >
-                          <IconOpenSidebarRight className="h-4 w-4" />
+                          <Globe className="h-4 w-4" />
                         </Button>
                       </span>
                     </PreviewSetupHoverCard>
