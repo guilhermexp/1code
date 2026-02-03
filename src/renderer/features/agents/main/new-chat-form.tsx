@@ -86,6 +86,7 @@ import {
   type AgentsMentionsEditorHandle,
   type FileMentionOption,
 } from "../mentions"
+import { AgentFileItem } from "../ui/agent-file-item"
 import { AgentImageItem } from "../ui/agent-image-item"
 import { AgentPastedTextItem } from "../ui/agent-pasted-text-item"
 import { AgentsHeaderControls } from "../ui/agents-header-controls"
@@ -270,11 +271,9 @@ export function NewChatForm({
   }
 
   const handleConfigureWorktree = () => {
-    // Open the project-specific worktree settings tab
-    if (validatedProject?.id) {
-      setSettingsActiveTab(`project-${validatedProject.id}` as any)
-      setSettingsDialogOpen(true)
-    }
+    // Open the projects settings tab
+    setSettingsActiveTab("projects")
+    setSettingsDialogOpen(true)
   }
   // Parse owner/repo from GitHub URL
   const parseGitHubUrl = (url: string) => {
@@ -349,12 +348,15 @@ export function NewChatForm({
     }
   }, [validatedProject?.id, lastSelectedBranches])
 
-  // Image upload hook
+  // File upload hook
   const {
     images,
+    files,
     handleAddAttachments,
     removeImage,
+    removeFile,
     clearImages,
+    clearFiles,
     isUploading,
   } = useAgentsFileUpload()
 
@@ -883,9 +885,10 @@ export function NewChatForm({
   const utils = trpc.useUtils()
   const createChatMutation = trpc.chats.create.useMutation({
     onSuccess: (data) => {
-      // Clear editor, images, pasted texts, and file contents cache only on success
+      // Clear editor, images, files, pasted texts, and file contents cache only on success
       editorRef.current?.clear()
       clearImages()
+      clearFiles()
       clearPastedTexts()
       fileContentsRef.current.clear()
       clearCurrentDraft()
@@ -966,12 +969,13 @@ export function NewChatForm({
     // Get value from uncontrolled editor
     let message = editorRef.current?.getValue() || ""
 
-    // Allow send if there's text, images, or pasted text files
+    // Allow send if there's text, images, files, or pasted text files
     const hasText = message.trim().length > 0
     const hasImages = images.filter((img) => !img.isLoading && img.url).length > 0
+    const hasFiles = files.filter((f) => !f.isLoading).length > 0
     const hasPastedTexts = pastedTexts.length > 0
 
-    if ((!hasText && !hasImages && !hasPastedTexts) || !selectedProject) {
+    if ((!hasText && !hasImages && !hasFiles && !hasPastedTexts) || !selectedProject) {
       return
     }
 
@@ -1081,7 +1085,7 @@ export function NewChatForm({
       useWorktree: workMode === "worktree",
       mode: agentMode,
     })
-    // Editor, images, and pasted texts are cleared in onSuccess callback
+    // Editor, images, files, and pasted texts are cleared in onSuccess callback
   }, [
     selectedProject,
     validatedProject?.path,
@@ -1091,6 +1095,7 @@ export function NewChatForm({
     selectedBranchType,
     workMode,
     images,
+    files,
     pastedTexts,
     agentMode,
     trpcUtils,
@@ -1405,9 +1410,9 @@ export function NewChatForm({
     [validatedProject?.path, handleAddAttachments, trpcUtils],
   )
 
-  // Context items for images and pasted text files
+  // Context items for images, files, and pasted text files
   const contextItems =
-    images.length > 0 || pastedTexts.length > 0 ? (
+    images.length > 0 || files.length > 0 || pastedTexts.length > 0 ? (
       <div className="flex flex-wrap gap-[6px]">
         {(() => {
           // Build allImages array for gallery navigation
@@ -1432,6 +1437,17 @@ export function NewChatForm({
             />
           ))
         })()}
+        {files.map((f) => (
+          <AgentFileItem
+            key={f.id}
+            id={f.id}
+            filename={f.filename}
+            url={f.url || ""}
+            size={f.size}
+            isLoading={f.isLoading}
+            onRemove={() => removeFile(f.id)}
+          />
+        ))}
         {pastedTexts.map((pt) => (
           <AgentPastedTextItem
             key={pt.id}
@@ -1456,7 +1472,7 @@ export function NewChatForm({
   }, [])
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col relative">
       {/* Header - Simple burger on mobile, AgentsHeaderControls on desktop */}
       <div className="flex-shrink-0 flex items-center justify-between bg-background p-1.5">
         <div className="flex-1 min-w-0 flex items-center gap-2">
@@ -1830,11 +1846,10 @@ export function NewChatForm({
                         type="file"
                         ref={fileInputRef}
                         hidden
-                        accept="image/jpeg,image/png"
                         multiple
                         onChange={(e) => {
-                          const files = Array.from(e.target.files || [])
-                          handleAddAttachments(files)
+                          const inputFiles = Array.from(e.target.files || [])
+                          handleAddAttachments(inputFiles)
                           e.target.value = "" // Reset to allow same file selection
                         }}
                       />
@@ -1847,7 +1862,7 @@ export function NewChatForm({
                           size="icon"
                           className="h-7 w-7 rounded-sm outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
                           onClick={() => fileInputRef.current?.click()}
-                          disabled={images.length >= 5}
+                          disabled={images.length >= 5 && files.length >= 10}
                         >
                           <AttachIcon className="h-4 w-4" />
                         </Button>
@@ -2049,40 +2064,7 @@ export function NewChatForm({
                   )}
                 </div>
 
-                {/* Worktree config banner - absolute positioned to avoid layout shift */}
-                {showWorktreeBanner && (
-                  <div className="absolute left-0 right-0 top-full mt-2 ml-[5px] mr-[5px] p-3 pb-4 bg-muted/50 rounded-lg border border-border space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      Configure a worktree setup script to install dependencies or copy environment variables.
-                    </p>
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleConfigureWorktree}
-                      >
-                        Settings
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          const prompt = COMMAND_PROMPTS["worktree-setup"]
-                          if (prompt && validatedProject) {
-                            createChatMutation.mutate({
-                              projectId: validatedProject.id,
-                              name: "Worktree Setup",
-                              initialMessageParts: [{ type: "text", text: prompt }],
-                              useWorktree: false,
-                              mode: "agent",
-                            })
-                          }
-                        }}
-                      >
-                        Fill with AI
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                {/* Worktree config banner - moved to corner banner below */}
 
                 {/* File mention dropdown */}
                 {/* Desktop: use projectPath for local file search */}
@@ -2122,6 +2104,44 @@ export function NewChatForm({
           )}
         </div>
       </div>
+
+      {/* Worktree config banner - fixed bottom-right corner */}
+      {showWorktreeBanner && (
+        <div className="absolute bottom-4 right-4 max-w-sm p-3 pb-4 bg-muted/50 backdrop-blur-sm rounded-lg border border-border space-y-3 shadow-lg z-50">
+          <p className="text-sm text-muted-foreground">
+            Configure a worktree setup script to install dependencies or copy
+            environment variables.
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleConfigureWorktree}
+            >
+              Settings
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                const prompt = COMMAND_PROMPTS["worktree-setup"]
+                if (prompt && validatedProject) {
+                  createChatMutation.mutate({
+                    projectId: validatedProject.id,
+                    name: "Worktree Setup",
+                    initialMessageParts: [
+                      { type: "text", text: prompt },
+                    ],
+                    useWorktree: false,
+                    mode: "agent",
+                  })
+                }
+              }}
+            >
+              Fill with AI
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

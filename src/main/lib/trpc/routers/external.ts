@@ -1,5 +1,5 @@
 import { clipboard, shell } from "electron";
-import { spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
 import { z } from "zod";
@@ -15,19 +15,6 @@ function expandTilde(filePath: string): string {
     return path.join(os.homedir(), filePath.slice(1));
   }
   return filePath;
-}
-
-/**
- * Check if a command exists in PATH
- */
-function commandExists(cmd: string): boolean {
-  try {
-    const checkCmd = process.platform === "win32" ? "where" : "which";
-    const result = spawnSync(checkCmd, [cmd], { stdio: "ignore" });
-    return result.status === 0;
-  } catch {
-    return false;
-  }
 }
 
 function spawnAsync(command: string, args: string[]): Promise<void> {
@@ -86,48 +73,49 @@ export const externalRouter = router({
       return { success: true };
     }),
 
-  openFileInEditor: publicProcedure
-    .input(
-      z.object({
-        path: z.string(),
-        cwd: z.string().optional(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      const { path: filePath, cwd } = input;
+	openFileInEditor: publicProcedure
+		.input(
+			z.object({
+				path: z.string(),
+				cwd: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ input }) => {
+			const { cwd } = input;
+			const filePath = input.path.startsWith("~")
+				? input.path.replace("~", os.homedir())
+				: input.path;
 
-      // Try common code editors in order of preference
-      const editors = [
-        { cmd: "code", args: [filePath] }, // VS Code
-        { cmd: "cursor", args: [filePath] }, // Cursor
-        { cmd: "subl", args: [filePath] }, // Sublime Text
-        { cmd: "atom", args: [filePath] }, // Atom
-      ];
+			// Try common code editors in order of preference
+			const editors = [
+				{ cmd: "cursor", args: [filePath] }, // Cursor
+				{ cmd: "code", args: [filePath] }, // VS Code
+				{ cmd: "subl", args: [filePath] }, // Sublime Text
+				{ cmd: "atom", args: [filePath] }, // Atom
+				{ cmd: "open", args: ["-t", filePath] }, // macOS default text editor
+			];
 
-      for (const editor of editors) {
-        // Check if the command exists before trying to spawn
-        if (!commandExists(editor.cmd)) {
-          continue;
-        }
+			for (const editor of editors) {
+				try {
+					// Check if the command exists first
+					execFileSync("which", [editor.cmd], { stdio: "ignore" });
+					const child = spawn(editor.cmd, editor.args, {
+						cwd: cwd || undefined,
+						detached: true,
+						stdio: "ignore",
+					});
+					child.unref();
+					return { success: true, editor: editor.cmd };
+				} catch {
+					// Try next editor
+					continue;
+				}
+			}
 
-        try {
-          const child = spawn(editor.cmd, editor.args, {
-            cwd: cwd || undefined,
-            detached: true,
-            stdio: "ignore",
-          });
-          child.unref();
-          return { success: true, editor: editor.cmd };
-        } catch {
-          // Try next editor
-          continue;
-        }
-      }
-
-      // Fallback: use shell.openPath which opens with default app
-      await shell.openPath(filePath);
-      return { success: true, editor: "default" };
-    }),
+			// Fallback: use shell.openPath which opens with default app
+			await shell.openPath(filePath);
+			return { success: true, editor: "default" };
+		}),
 
   openExternal: publicProcedure
     .input(z.string())

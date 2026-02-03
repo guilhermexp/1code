@@ -11,7 +11,7 @@ import {
   autoAdvanceTargetAtom,
   createTeamDialogOpenAtom,
   agentsSettingsDialogActiveTabAtom,
-  agentsSettingsDialogOpenAtom,
+  agentsSidebarOpenAtom,
   agentsHelpPopoverOpenAtom,
   selectedAgentChatIdsAtom,
   isAgentMultiSelectModeAtom,
@@ -39,7 +39,7 @@ import {
   useRenameRemoteChat,
 } from "../../lib/hooks/use-remote-chats"
 import { ArchivePopover } from "../agents/ui/archive-popover"
-import { ChevronDown, MoreHorizontal, Columns3 } from "lucide-react"
+import { ChevronDown, MoreHorizontal, Columns3, ArrowUpRight } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { remoteTrpc } from "../../lib/remote-trpc"
 // import { useRouter } from "next/navigation" // Desktop doesn't use next/navigation
@@ -124,7 +124,7 @@ import { useAgentSubChatStore, OPEN_SUB_CHATS_CHANGE_EVENT } from "../agents/sto
 import { getWindowId } from "../../contexts/WindowContext"
 import { AgentsHelpPopover } from "../agents/components/agents-help-popover"
 import { getShortcutKey, isDesktopApp } from "../../lib/utils/platform"
-import { useResolvedHotkeyDisplay } from "../../lib/hotkeys"
+import { useResolvedHotkeyDisplay, useResolvedHotkeyDisplayWithAlt } from "../../lib/hotkeys"
 import { pluralize } from "../agents/utils/pluralize"
 import { useNewChatDrafts, deleteNewChatDraft, type NewChatDraft } from "../agents/lib/drafts"
 import {
@@ -1192,36 +1192,25 @@ const InboxButton = memo(function InboxButton() {
 // Isolated Automations Button - full-width navigation link matching web layout
 const AutomationsButton = memo(function AutomationsButton() {
   const automationsEnabled = useAtomValue(betaAutomationsEnabledAtom)
-  const desktopView = useAtomValue(desktopViewAtom)
-  const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
-  const setSelectedDraftId = useSetAtom(selectedDraftIdAtom)
-  const setShowNewChatForm = useSetAtom(showNewChatFormAtom)
-  const setDesktopView = useSetAtom(desktopViewAtom)
 
   const handleClick = useCallback(() => {
-    setSelectedChatId(null)
-    setSelectedDraftId(null)
-    setShowNewChatForm(false)
-    setDesktopView("automations")
-  }, [setSelectedChatId, setSelectedDraftId, setShowNewChatForm, setDesktopView])
+    window.desktopApi.openExternal("https://21st.dev/agents/app/automations")
+  }, [])
 
   if (!automationsEnabled) return null
-
-  const isActive = desktopView === "automations" || desktopView === "automations-detail"
 
   return (
     <button
       type="button"
       onClick={handleClick}
       className={cn(
-        "flex items-center gap-2.5 w-full pl-2 pr-2 py-1.5 rounded-md text-sm transition-colors duration-150",
-        isActive
-          ? "bg-foreground/5 text-foreground"
-          : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+        "group flex items-center gap-2.5 w-full pl-2 pr-2 py-1.5 rounded-md text-sm transition-colors duration-150",
+        "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
       )}
     >
       <SidebarAutomationsIcon className="h-4 w-4" />
       <span className="flex-1 text-left">Automations</span>
+      <ArrowUpRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
     </button>
   )
 })
@@ -1324,12 +1313,11 @@ const SidebarHeader = memo(function SidebarHeader({
         />
       )}
 
-      {/* Custom traffic lights - positioned at top left, centered in 32px area */}
+      {/* No-drag zone over native traffic lights */}
       <TrafficLights
-        isHovered={isDropdownOpen}
         isFullscreen={isFullscreen}
         isDesktop={isDesktop}
-        className="absolute left-4 top-[14px] z-20"
+        className="absolute left-[15px] top-[12px] z-20"
       />
 
       {/* Close button - positioned at top right */}
@@ -1441,7 +1429,7 @@ const SidebarHeader = memo(function SidebarHeader({
                       className="gap-2"
                       onSelect={() => {
                         setIsDropdownOpen(false)
-                        setSettingsActiveTab("profile")
+                        setSettingsActiveTab("preferences")
                         setSettingsDialogOpen(true)
                       }}
                     >
@@ -1710,8 +1698,9 @@ export function AgentsSidebar({
   // Haptic feedback
   const { trigger: triggerHaptic } = useHaptic()
 
-  // Resolved hotkey for tooltip
-  const newWorkspaceHotkey = useResolvedHotkeyDisplay("new-workspace")
+  // Resolved hotkeys for tooltips
+  const { primary: newWorkspaceHotkey, alt: newWorkspaceAltHotkey } = useResolvedHotkeyDisplayWithAlt("new-workspace")
+  const settingsHotkey = useResolvedHotkeyDisplay("open-settings")
 
   // Rename dialog state
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -1747,8 +1736,18 @@ export function AgentsSidebar({
     null,
   )
 
-  const setSettingsDialogOpen = useSetAtom(agentsSettingsDialogOpenAtom)
   const setSettingsActiveTab = useSetAtom(agentsSettingsDialogActiveTabAtom)
+  const setDesktopViewForSettings = useSetAtom(desktopViewAtom)
+  const setSidebarOpenForSettings = useSetAtom(agentsSidebarOpenAtom)
+  // Navigate to settings page instead of opening a dialog
+  const setSettingsDialogOpen = useCallback((open: boolean) => {
+    if (open) {
+      setDesktopViewForSettings("settings")
+      setSidebarOpenForSettings(true)
+    } else {
+      setDesktopViewForSettings(null)
+    }
+  }, [setDesktopViewForSettings, setSidebarOpenForSettings])
   const { isLoaded: isAuthLoaded } = useCombinedAuth()
   const [showAuthDialog, setShowAuthDialog] = useState(false)
   const setCreateTeamDialogOpen = useSetAtom(createTeamDialogOpenAtom)
@@ -2858,16 +2857,14 @@ export function AgentsSidebar({
     }
   }, [])
 
+  // Update sidebar hover UI - DOM manipulation for close button, state for TrafficLights
+  // TrafficLights component handles native traffic light visibility via its own effect
   // Update sidebar hover UI via DOM manipulation (no state update to avoid re-renders)
   const updateSidebarHoverUI = useCallback((hovered: boolean) => {
     isSidebarHoveredRef.current = hovered
     // Update close button opacity
     if (closeButtonRef.current) {
       closeButtonRef.current.style.opacity = hovered ? "1" : "0"
-    }
-    // Update native traffic light visibility
-    if (typeof window !== "undefined" && window.desktopApi?.setTrafficLightVisibility) {
-      window.desktopApi.setTrafficLightVisibility(hovered)
     }
   }, [])
 
@@ -3172,9 +3169,14 @@ export function AgentsSidebar({
                 <span className="text-sm font-medium">New Workspace</span>
               </ButtonCustom>
             </TooltipTrigger>
-            <TooltipContent side="right">
-              Start a new workspace
-              {newWorkspaceHotkey && <Kbd>{newWorkspaceHotkey}</Kbd>}
+            <TooltipContent side="right" className="flex flex-col items-start gap-1">
+              <span>Start a new workspace</span>
+              {newWorkspaceHotkey && (
+                <span className="flex items-center gap-1.5">
+                  <Kbd>{newWorkspaceHotkey}</Kbd>
+                  {newWorkspaceAltHotkey && <><span className="text-[10px] opacity-50">or</span><Kbd>{newWorkspaceAltHotkey}</Kbd></>}
+                </span>
+              )}
             </TooltipContent>
           </Tooltip>
         </div>
@@ -3402,7 +3404,7 @@ export function AgentsSidebar({
                     <button
                       type="button"
                       onClick={() => {
-                        setSettingsActiveTab("profile")
+                        setSettingsActiveTab("preferences")
                         setSettingsDialogOpen(true)
                       }}
                       className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
@@ -3410,7 +3412,7 @@ export function AgentsSidebar({
                       <SettingsIcon className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Settings</TooltipContent>
+                  <TooltipContent>Settings{settingsHotkey && <> <Kbd>{settingsHotkey}</Kbd></>}</TooltipContent>
                 </Tooltip>
 
                 {/* Help Button - isolated component to prevent sidebar re-renders */}

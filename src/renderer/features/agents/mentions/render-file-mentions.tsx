@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { createContext, useContext, useMemo } from "react"
 import { getFileIconByExtension } from "./agents-file-mention"
 import { FilesIcon, SkillIcon, CustomAgentIcon, OriginalMCPIcon } from "../../../components/ui/icons"
 import { MENTION_PREFIXES } from "./agents-mentions-editor"
@@ -9,6 +9,35 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "../../../components/ui/hover-card"
+
+/**
+ * Context for opening files in the file viewer sidebar.
+ * Provided by ChatView, consumed by MentionChip.
+ */
+type FileOpenHandler = (filePath: string) => void
+const FileOpenContext = createContext<FileOpenHandler | null>(null)
+
+export function FileOpenProvider({
+  onOpenFile,
+  children,
+}: {
+  onOpenFile: FileOpenHandler
+  children: React.ReactNode
+}) {
+  return (
+    <FileOpenContext.Provider value={onOpenFile}>
+      {children}
+    </FileOpenContext.Provider>
+  )
+}
+
+/**
+ * Hook to access the file open handler from any child component.
+ * Returns null if not inside a FileOpenProvider.
+ */
+export function useFileOpen(): FileOpenHandler | null {
+  return useContext(FileOpenContext)
+}
 
 // UTF-8 safe base64 decoding (atob doesn't support Unicode)
 function base64ToUtf8(base64: string): string {
@@ -70,7 +99,7 @@ interface ParsedMention {
 
 /**
  * Parse file/folder/skill/agent/tool/quote/diff/pasted mention ID into its components
- * Format: file:owner/repo:path/to/file.tsx or folder:owner/repo:path/to/folder or skill:skill-name or agent:agent-name or tool:mcp__server__toolname
+ * Format: file:owner/repo:path/to/file.tsx or folder:owner/repo:path/to/folder or skill:skill-name or agent:agent-name or tool:servername
  * Quote format: quote:preview_text:full_text (base64 encoded full text)
  * Diff format: diff:filepath:lineNumber:preview_text:full_text (base64 encoded full text)
  * Pasted format: pasted:filepath:size:preview_text
@@ -204,19 +233,27 @@ function parseMention(id: string): ParsedMention | null {
     }
   }
 
-  // Handle tool mentions (format: tool:mcp__servername__toolname)
+  // Handle tool mentions: tool:servername (MCP server) or tool:mcp__server__toolname (individual tool)
   if (isTool) {
     const toolPath = id.slice(MENTION_PREFIXES.TOOL.length)
-    // Extract readable name from tool path (e.g., mcp__figma__get_design -> Get design)
-    const parts = toolPath.split("__")
-    const toolName = parts.length >= 3 ? parts.slice(2).join("__") : toolPath
-    const displayName = toolName
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-      .trim()
+    if (toolPath.startsWith("mcp__")) {
+      const parts = toolPath.split("__")
+      const toolName = parts.length >= 3 ? parts.slice(2).join("__") : toolPath
+      const displayName = toolName
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+        .trim()
+      return {
+        id,
+        label: displayName,
+        path: toolPath,
+        repository: "",
+        type: "tool",
+      }
+    }
     return {
       id,
-      label: displayName,
+      label: toolPath,
       path: toolPath,
       repository: "",
       type: "tool",
@@ -291,6 +328,9 @@ function MentionChip({ mention }: { mention: ParsedMention }) {
     )
   }
 
+  const onOpenFile = useContext(FileOpenContext)
+  const isClickable = (mention.type === "file" || mention.type === "folder") && !!onOpenFile
+
   const Icon = mention.type === "skill"
     ? SkillIcon
     : mention.type === "agent"
@@ -311,8 +351,9 @@ function MentionChip({ mention }: { mention: ParsedMention }) {
 
   return (
     <span
-      className="inline-flex items-center gap-1 px-[6px] rounded-[6px] text-sm align-middle bg-black/[0.04] dark:bg-white/[0.08] text-foreground/80 select-none"
+      className={`inline-flex items-center gap-1 px-[6px] rounded-[6px] text-sm align-middle bg-black/[0.04] dark:bg-white/[0.08] text-foreground/80 select-none${isClickable ? " cursor-pointer hover:bg-black/[0.08] dark:hover:bg-white/[0.12] transition-colors" : ""}`}
       title={title}
+      onClick={isClickable ? () => onOpenFile(mention.path) : undefined}
     >
       <Icon className={mention.type === "tool" ? "h-3.5 w-3.5 text-muted-foreground flex-shrink-0" : "h-3 w-3 text-muted-foreground flex-shrink-0"} />
       <span>{mention.label}</span>

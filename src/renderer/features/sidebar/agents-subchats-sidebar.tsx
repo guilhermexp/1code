@@ -17,6 +17,7 @@ import {
   pendingUserQuestionsAtom,
   undoStackAtom,
   subChatModeAtomFamily,
+  suppressInputFocusAtom,
   type UndoItem,
 } from "../agents/atoms"
 import {
@@ -1188,6 +1189,7 @@ export function AgentsSubChatsSidebar({
             )}
 
             <div
+              data-sidebar-scroll
               ref={scrollContainerRef}
               onScroll={handleScroll}
               className={cn(
@@ -1268,6 +1270,18 @@ export function AgentsSubChatsSidebar({
                                         undefined,
                                         globalIndex,
                                       )
+                                    }
+                                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                                      e.preventDefault()
+                                      const nextIndex = e.key === "ArrowDown" ? globalIndex + 1 : globalIndex - 1
+                                      const container = (e.currentTarget as HTMLElement).closest("[data-sidebar-scroll]")
+                                      const nextEl = container?.querySelector<HTMLElement>(`[data-subchat-index="${nextIndex}"]`)
+                                      if (nextEl) {
+                                        appStore.set(suppressInputFocusAtom, true)
+                                        nextEl.click()
+                                        nextEl.focus()
+                                        nextEl.scrollIntoView({ block: "nearest" })
+                                      }
                                     }
                                   }}
                                   onMouseEnter={(e) => {
@@ -1542,6 +1556,18 @@ export function AgentsSubChatsSidebar({
                                         undefined,
                                         globalIndex,
                                       )
+                                    }
+                                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                                      e.preventDefault()
+                                      const nextIndex = e.key === "ArrowDown" ? globalIndex + 1 : globalIndex - 1
+                                      const container = (e.currentTarget as HTMLElement).closest("[data-sidebar-scroll]")
+                                      const nextEl = container?.querySelector<HTMLElement>(`[data-subchat-index="${nextIndex}"]`)
+                                      if (nextEl) {
+                                        appStore.set(suppressInputFocusAtom, true)
+                                        nextEl.click()
+                                        nextEl.focus()
+                                        nextEl.scrollIntoView({ block: "nearest" })
+                                      }
                                     }
                                   }}
                                   onMouseEnter={(e) => {
