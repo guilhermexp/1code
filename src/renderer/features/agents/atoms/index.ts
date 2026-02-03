@@ -296,12 +296,8 @@ export const agentsPreviewSidebarWidthAtom = atomWithStorage<number>(
   { getOnInit: true },
 )
 
-// Preview sidebar open state - window-scoped
-export const agentsPreviewSidebarOpenAtom = atomWithWindowStorage<boolean>(
-  "agents-preview-sidebar-open",
-  false,
-  { getOnInit: true },
-)
+// Preview sidebar open state - not persisted, always starts closed
+export const agentsPreviewSidebarOpenAtom = atom<boolean>(false)
 
 // Diff sidebar (right) width (global - same width for all chats)
 export const agentsDiffSidebarWidthAtom = atomWithStorage<number>(
