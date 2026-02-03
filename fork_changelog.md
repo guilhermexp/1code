@@ -4,7 +4,7 @@ bun run deploy (para auto deploy local)
 
 **Fork:** `guilhermexp/1code`
 **Upstream:** `21st-dev/1code`
-**Ultimo sync com upstream:** 2025-01-28 (v0.0.50)
+**Ultimo sync com upstream:** 2026-02-03 (v0.0.54)
 
 ---
 
