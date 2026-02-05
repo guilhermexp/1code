@@ -334,12 +334,12 @@ function registerIpcHandlers(): void {
 
           const insertStyles = () => {
             const href = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/styles.css';
+            const head = ensureHead();
+            if (!head) {
+              console.warn('[1code Inspector] No head element available, skipping styles');
+              return;
+            }
             if (!document.querySelector('link[rel="stylesheet"][href*="react-grab"]')) {
-              const head = ensureHead();
-              if (!head) {
-                console.warn('[1code Inspector] No head element available, skipping styles');
-                return;
-              }
               const styleLink = document.createElement('link');
               styleLink.rel = 'stylesheet';
               styleLink.href = href;
@@ -347,68 +347,170 @@ function registerIpcHandlers(): void {
               styleLink.onerror = (e) => console.error('[1code Inspector] CSS failed to load', e);
               head.appendChild(styleLink);
             }
+
+            // Override React Grab z-index to render above modals/dialogs
+            if (!document.querySelector('style[data-1code-inspector-override]')) {
+              const overrideStyle = document.createElement('style');
+              overrideStyle.setAttribute('data-1code-inspector-override', 'true');
+              overrideStyle.textContent = \`
+                [class*="react-grab"], [data-react-grab],
+                .ReactGrab, [id*="react-grab"],
+                div[style*="pointer-events"][style*="position: fixed"] {
+                  z-index: 2147483647 !important;
+                }
+              \`;
+              head.appendChild(overrideStyle);
+            }
           };
 
           const initReactGrab = () => {
-            let attempts = 0;
-            const checkReactGrab = () => {
-              attempts += 1;
-              if (window.ReactGrab) {
-                console.log('[1code Inspector] ReactGrab found, initializing');
-                try {
-                  const handleCopySuccess = (elements, content) => {
-                    console.log('[1code Inspector] Component selected:', content);
-                    window.parent.postMessage({
-                      type: 'INSPECTOR_ELEMENT_SELECTED',
-                      data: { content, elements }
-                    }, '*');
-                  };
-
-                  window.reactGrabApi = window.ReactGrab.init({
-                    onElementSelect: (element) => {
-                      try {
-                        if (window.reactGrabApi && typeof window.reactGrabApi.copyElement === 'function') {
-                          window.reactGrabApi.copyElement(element);
-                        }
-                      } catch (error) {
-                        console.error('[1code Inspector] Failed to copy selected element', error);
-                      }
-                    },
-                    onCopySuccess: handleCopySuccess
-                  });
-
-                  const registerPluginTarget =
-                    window.reactGrabApi && typeof window.reactGrabApi.registerPlugin === 'function'
-                      ? window.reactGrabApi
-                      : window.ReactGrab && typeof window.ReactGrab.registerPlugin === 'function'
-                        ? window.ReactGrab
-                        : null
-
-                  if (registerPluginTarget) {
-                    registerPluginTarget.registerPlugin({
-                      name: '1code-integration',
-                      hooks: {
-                        onCopySuccess: handleCopySuccess
-                      }
-                    });
+            const handleCopySuccess = (...args) => {
+              try {
+                // Extract string content from args (signature varies across versions)
+                let content = '';
+                for (const arg of args) {
+                  if (typeof arg === 'string') {
+                    content = arg;
+                    break;
                   }
-
-                  if (enabled && window.reactGrabApi && typeof window.reactGrabApi.activate === 'function') {
-                    window.reactGrabApi.activate();
+                }
+                if (!content) {
+                  for (const arg of args) {
+                    if (arg && typeof arg === 'object' && !(arg instanceof Element) && !(arg instanceof Node)) {
+                      if (typeof arg.content === 'string') { content = arg.content; break; }
+                      if (typeof arg.text === 'string') { content = arg.text; break; }
+                    }
                   }
-
-                  window.__1codeReactGrabInjected = true;
-                  return;
-                } catch (error) {
-                  console.error('[1code Inspector] Failed to initialize', error);
-                  postError('INSPECTOR_INIT_ERROR', error && error.message ? error.message : String(error));
+                }
+                if (!content) {
+                  console.warn('[1code Inspector] No string content in onCopySuccess');
                   return;
                 }
+                console.log('[1code Inspector] Component selected:', content);
+                // JSON round-trip ensures no DOM references leak into postMessage
+                var safeMsg = JSON.parse(JSON.stringify({
+                  type: 'INSPECTOR_ELEMENT_SELECTED',
+                  data: { content: String(content) }
+                }));
+                window.parent.postMessage(safeMsg, '*');
+              } catch (err) {
+                console.error('[1code Inspector] handleCopySuccess error:', err);
+              }
+            };
+
+            const setupApi = (api) => {
+              try {
+                console.log('[1code Inspector] API found, configuring');
+                window.reactGrabApi = api;
+
+                if (typeof api.registerPlugin === 'function') {
+                  api.registerPlugin({
+                    name: '1code-integration',
+                    hooks: {
+                      onCopySuccess: handleCopySuccess
+                    }
+                  });
+                }
+
+                if (enabled && typeof api.activate === 'function') {
+                  api.activate();
+                }
+
+                // Observe for dynamically added React Grab overlay elements and force z-index
+                if (!window.__1codeZIndexObserver) {
+                  window.__1codeZIndexObserver = new MutationObserver((mutations) => {
+                    for (const mutation of mutations) {
+                      for (const node of mutation.addedNodes) {
+                        if (node.nodeType === 1) {
+                          const el = node;
+                          const style = window.getComputedStyle(el);
+                          if (style.position === 'fixed' && el.style.pointerEvents) {
+                            el.style.zIndex = '2147483647';
+                          }
+                        }
+                      }
+                    }
+                  });
+                  window.__1codeZIndexObserver.observe(document.body, { childList: true, subtree: false });
+                }
+
+                window.__1codeReactGrabInjected = true;
+              } catch (error) {
+                console.error('[1code Inspector] Failed to initialize', error);
+                postError('INSPECTOR_INIT_ERROR', error && error.message ? error.message : String(error));
+              }
+            };
+
+            // v0.1.1+: API auto-initializes on window.__REACT_GRAB__
+            if (window.__REACT_GRAB__) {
+              setupApi(window.__REACT_GRAB__);
+              return;
+            }
+
+            // Legacy: older versions use window.ReactGrab with manual init()
+            if (window.ReactGrab && typeof window.ReactGrab.init === 'function') {
+              const api = window.ReactGrab.init({
+                onElementSelect: (element) => {
+                  try {
+                    if (window.reactGrabApi && typeof window.reactGrabApi.copyElement === 'function') {
+                      window.reactGrabApi.copyElement(element);
+                    }
+                  } catch (error) {
+                    console.error('[1code Inspector] Failed to copy selected element', error);
+                  }
+                },
+                onCopySuccess: handleCopySuccess
+              });
+              setupApi(api);
+              return;
+            }
+
+            // Listen for the react-grab:init custom event (v0.1.1+ fires this on load)
+            let resolved = false;
+            const onInit = (event) => {
+              if (resolved) return;
+              resolved = true;
+              console.log('[1code Inspector] Received react-grab:init event');
+              setupApi(event.detail);
+            };
+            window.addEventListener('react-grab:init', onInit, { once: true });
+
+            // Fallback: poll for both new and legacy globals
+            let attempts = 0;
+            const checkReactGrab = () => {
+              if (resolved) return;
+              attempts += 1;
+
+              if (window.__REACT_GRAB__) {
+                resolved = true;
+                window.removeEventListener('react-grab:init', onInit);
+                setupApi(window.__REACT_GRAB__);
+                return;
+              }
+
+              if (window.ReactGrab && typeof window.ReactGrab.init === 'function') {
+                resolved = true;
+                window.removeEventListener('react-grab:init', onInit);
+                const api = window.ReactGrab.init({
+                  onElementSelect: (element) => {
+                    try {
+                      if (window.reactGrabApi && typeof window.reactGrabApi.copyElement === 'function') {
+                        window.reactGrabApi.copyElement(element);
+                      }
+                    } catch (error) {
+                      console.error('[1code Inspector] Failed to copy selected element', error);
+                    }
+                  },
+                  onCopySuccess: handleCopySuccess
+                });
+                setupApi(api);
+                return;
               }
 
               if (attempts < 50) {
                 setTimeout(checkReactGrab, 100);
               } else {
+                window.removeEventListener('react-grab:init', onInit);
                 console.error('[1code Inspector] ReactGrab not found after 5s');
                 postError('INSPECTOR_INIT_ERROR', 'ReactGrab not found on window');
               }
