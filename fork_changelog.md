@@ -33,6 +33,19 @@ Permite clicar em componentes React no preview para adicionar automaticamente o 
 
 **Limitacao:** Funciona apenas em dev mode com React apps que tenham source maps.
 
+### Fixes aplicados (2026-02-04):
+
+**Compatibilidade com React Grab v0.1.1+:**
+- API global mudou de `window.ReactGrab` para `window.__REACT_GRAB__` (auto-inicializada)
+- Deteccao agora suporta ambas as APIs (nova + legacy) com fallback por polling e evento `react-grab:init`
+- `handleCopySuccess` usa `...args` com extracao defensiva de conteudo string (assinatura do callback mudou entre versoes)
+- `postMessage` protegido com `JSON.parse(JSON.stringify(...))` + `try/catch` para evitar `DataCloneError` com DOM nodes
+
+**Inspector overlay acima de modais:**
+- CSS override injeta `z-index: 2147483647 !important` em todos elementos do React Grab
+- MutationObserver forca z-index em elementos overlay criados dinamicamente
+- Toolbar do React Grab mantida visivel (controle de ativacao/desativacao inline)
+
 ---
 
 ## 2. Internacionalizacao (i18n)
