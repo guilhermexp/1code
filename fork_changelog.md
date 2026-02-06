@@ -8,6 +8,32 @@ bun run deploy (para auto deploy local)
 
 ---
 
+## ⚠ NAO SOBRESCREVER AO SINCRONIZAR COM UPSTREAM
+
+Estas configuracoes sao criticas do fork e DEVEM ser preservadas manualmente apos qualquer merge com upstream:
+
+### package.json - Build apenas ARM64 (Apple Silicon)
+O upstream builda para `arm64` + `x64`. Nosso fork builda **somente arm64** porque usamos Apple Silicon.
+Se o upstream sobrescrever, o build vai gerar DMG Intel que roda via Rosetta (muito lento).
+
+```jsonc
+// mac.target[].arch → deve ser SOMENTE ["arm64"], nunca ["arm64", "x64"]
+// script "release" → deve usar "package:mac:arm64", nunca "package:mac"
+```
+
+**Arquivos para checar apos merge:**
+- `package.json` → campo `build.mac.target[].arch` (linhas ~185-198)
+- `package.json` → script `"release"` (linha ~25)
+
+### src/main/windows/main.ts - Inspector com React Grab v0.1.1+
+O upstream pode ter a versao antiga do inspector. Nosso fork suporta ambas APIs (`window.__REACT_GRAB__` + `window.ReactGrab` legacy).
+Se sobrescrever, o inspector para de funcionar com React Grab >= v0.1.1.
+
+### src/renderer/features/agents/atoms/index.ts - Preview sidebar sem persistencia
+`agentsPreviewSidebarOpenAtom` deve ser `atom<boolean>(false)` (sem persistencia), nao `atomWithWindowStorage`.
+
+---
+
 ## 1. Inspector Mode - React Component Detection
 
 **~15 arquivos | ~1200 linhas**
@@ -128,6 +154,8 @@ Adicionado `commandExists()` usando `which`/`where` para verificar se o editor e
 
 - `package:mac:arm64` - Build exclusivo para ARM64
 - `release:dev` sem reinstall de node_modules para iteracao mais rapida
+- Targets `dmg` e `zip` configurados **somente para arm64** (removido x64 do `build.mac.target`)
+- Script `release` usa `package:mac:arm64` ao inves de `package:mac` para evitar gerar binarios Intel
 
 **Arquivo:** `package.json`
 
@@ -142,6 +170,6 @@ Adicionado `commandExists()` usando `which`/`where` para verificar se o editor e
 | Preview Melhorias | ~5 | ~600 | Medium - UX do preview |
 | Documentacao | 3 | ~3700 | Dev reference |
 | External Editor Fix | 1 | ~20 | Bug fix |
-| Build Scripts | 1 | ~2 | Dev QoL |
+| Build Scripts | 1 | ~10 | Dev QoL + ARM64 only |
 
 Todas as mudancas sao **aditivas** e nao quebram compatibilidade com o upstream.
