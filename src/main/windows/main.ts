@@ -7,6 +7,7 @@ import {
   clipboard,
   session,
   nativeImage,
+  dialog,
 } from "electron"
 import { join } from "path"
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs"
