@@ -62,6 +62,13 @@ export const KanbanCard = memo(function KanbanCard({
   onExportChat,
   onCopyChat,
 }: KanbanCardProps) {
+  const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault()
+      e.currentTarget.click()
+    }
+  }
+
   const timeAgo = formatTimeAgo(card.updatedAt || card.createdAt)
 
   // Build display text: projectName + branch (if exists)
@@ -165,8 +172,7 @@ export const KanbanCard = memo(function KanbanCard({
 
               {/* Archive button - absolute, appears on hover */}
               {!card.isDraft && (
-                <button
-                  type="button"
+                <span
                   onClick={(e) => {
                     e.stopPropagation()
                     onArchive(card.chatId)
@@ -176,7 +182,7 @@ export const KanbanCard = memo(function KanbanCard({
                   aria-label="Archive workspace"
                 >
                   <ArchiveIcon className="h-3.5 w-3.5" />
-                </button>
+                </span>
               )}
             </div>
           )}
@@ -206,9 +212,11 @@ export const KanbanCard = memo(function KanbanCard({
   // Don't show context menu for drafts
   if (card.isDraft) {
     return (
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onClick}
+        onKeyDown={handleCardKeyDown}
         className={cn(
           "w-full text-left py-1.5 cursor-pointer group relative",
           "pl-2 pr-2 rounded-md",
@@ -219,16 +227,18 @@ export const KanbanCard = memo(function KanbanCard({
         )}
       >
         {cardContent}
-      </button>
+      </div>
     )
   }
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={0}
           onClick={onClick}
+          onKeyDown={handleCardKeyDown}
           className={cn(
             "w-full text-left py-1.5 cursor-pointer group relative",
             "pl-2 pr-2 rounded-md",
@@ -240,7 +250,7 @@ export const KanbanCard = memo(function KanbanCard({
           )}
         >
           {cardContent}
-        </button>
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
         <ContextMenuItem onClick={() => onTogglePin(card.chatId)}>

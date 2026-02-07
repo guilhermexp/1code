@@ -42,6 +42,7 @@ interface IsolatedMessagesSectionProps {
   }>
   MessageGroupWrapper: React.ComponentType<{ children: React.ReactNode; isLastGroup?: boolean }>
   toolRegistry: Record<string, { icon: any; title: (args: any) => string }>
+  onRollback?: (userMsg: any) => void
 }
 
 function areSectionPropsEqual(
@@ -60,7 +61,8 @@ function areSectionPropsEqual(
     prev.UserBubbleComponent === next.UserBubbleComponent &&
     prev.ToolCallComponent === next.ToolCallComponent &&
     prev.MessageGroupWrapper === next.MessageGroupWrapper &&
-    prev.toolRegistry === next.toolRegistry
+    prev.toolRegistry === next.toolRegistry &&
+    prev.onRollback === next.onRollback
   )
 }
 
@@ -77,6 +79,7 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
   ToolCallComponent,
   MessageGroupWrapper,
   toolRegistry,
+  onRollback,
 }: IsolatedMessagesSectionProps) {
   // CRITICAL: Check if global atoms are synced for THIS subChat FIRST
   // With keep-alive tabs, multiple ChatViewInner instances exist simultaneously.
@@ -117,6 +120,7 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
           ToolCallComponent={ToolCallComponent}
           MessageGroupWrapper={MessageGroupWrapper}
           toolRegistry={toolRegistry}
+          onRollback={onRollback}
         />
       ))}
     </>

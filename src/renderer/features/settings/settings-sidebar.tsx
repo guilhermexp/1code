@@ -3,6 +3,7 @@ import { ChevronLeft } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import {
   EyeOpenFilledIcon,
+  GlobeIcon,
   ProfileIconFilled,
   SlidersFilledIcon,
 } from "../../icons"
@@ -48,6 +49,11 @@ const MAIN_TABS = [
     id: "appearance" as SettingsTab,
     label: "Appearance",
     icon: EyeOpenFilledIcon,
+  },
+  {
+    id: "language" as SettingsTab,
+    label: "Language",
+    icon: GlobeIcon,
   },
   {
     id: "keyboard" as SettingsTab,

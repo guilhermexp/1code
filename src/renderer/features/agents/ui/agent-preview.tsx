@@ -3,12 +3,17 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { useAtom } from "jotai"
 import { Button } from "../../../components/ui/button"
-import { RotateCw, RefreshCcwDot, Target, ChevronLeft, ChevronRight } from "lucide-react"
+import { RotateCw, RefreshCcwDot, Target, ChevronLeft, ChevronRight, Copy, Trash2, ListChecks } from "lucide-react"
 import {
   ExternalLinkIcon,
   IconDoubleChevronRight,
   IconChatBubble,
 } from "../../../components/ui/icons"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "../../../components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { PreviewUrlInput } from "./preview-url-input"
 import {
@@ -35,6 +40,61 @@ interface AgentPreviewProps {
   hideHeader?: boolean
   onClose?: () => void
   isMobile?: boolean
+}
+
+// Auth flows inside embedded previews often require storage access and
+// top-level navigation handoffs during OAuth redirects.
+const PREVIEW_IFRAME_SANDBOX =
+  "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-top-navigation allow-top-navigation-by-user-activation allow-storage-access-by-user-activation"
+
+type PreviewLogLevel = "error" | "warn" | "info"
+
+interface PreviewLogEntry {
+  id: string
+  timestamp: number
+  level: PreviewLogLevel
+  source: string
+  message: string
+}
+
+interface PreviewConsoleCaptureEvent {
+  timestamp: number
+  level: "error" | "warn"
+  args: unknown[]
+}
+
+interface PreviewConsoleCaptureState {
+  listeners: Set<(event: PreviewConsoleCaptureEvent) => void>
+  underlyingError: (...args: unknown[]) => void
+  underlyingWarn: (...args: unknown[]) => void
+  wrapperError: (...args: unknown[]) => void
+  wrapperWarn: (...args: unknown[]) => void
+  patchIntervalId: number
+}
+
+declare global {
+  interface Window {
+    __agentsPreviewConsoleCapture?: PreviewConsoleCaptureState
+  }
+}
+
+const MAX_PREVIEW_LOGS = 250
+
+function serializeLogValue(value: unknown): string {
+  if (value instanceof Error) {
+    return value.stack || value.message
+  }
+  if (typeof value === "string") {
+    return value
+  }
+  if (typeof value === "object" && value !== null) {
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return "[unserializable object]"
+    }
+  }
+  return String(value)
 }
 
 export function AgentPreview({
@@ -75,6 +135,32 @@ export function AgentPreview({
   // Inspector Mode state for React Grab integration
   const [inspectorEnabled, setInspectorEnabled] = useState(false)
   const lastInspectorClipboardRef = useRef<string>("")
+  const [previewLogs, setPreviewLogs] = useState<PreviewLogEntry[]>([])
+
+  const pushPreviewLog = useCallback(
+    (level: PreviewLogLevel, source: string, ...args: unknown[]) => {
+      const message = args.map(serializeLogValue).join(" ").trim()
+      if (!message) return
+      const entry: PreviewLogEntry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        timestamp: Date.now(),
+        level,
+        source,
+        message,
+      }
+      setPreviewLogs((prev) => [...prev.slice(-(MAX_PREVIEW_LOGS - 1)), entry])
+    },
+    [],
+  )
+
+  const clearPreviewLogs = useCallback(() => {
+    setPreviewLogs([])
+  }, [])
+
+  const latestPreviewLogs = useMemo(
+    () => previewLogs.slice(-80).reverse(),
+    [previewLogs],
+  )
 
   // Dual state architecture:
   // - loadedPath: Controls iframe src (stable, only changes on manual navigation)
@@ -197,6 +283,42 @@ export function AgentPreview({
     return url
   }, [previewBaseUrl, loadedPath, editableCustomUrl, cacheBuster])
 
+  const copyPreviewLogs = useCallback(async () => {
+    if (previewLogs.length === 0) {
+      toast.message("No preview logs to copy")
+      return
+    }
+
+    const header = [
+      `# Preview Logs`,
+      `chatId: ${chatId}`,
+      `url: ${previewUrl}`,
+      `capturedAt: ${new Date().toISOString()}`,
+      "",
+    ].join("\n")
+
+    const body = previewLogs
+      .map((entry) => {
+        const ts = new Date(entry.timestamp).toISOString()
+        return `[${ts}] [${entry.level.toUpperCase()}] [${entry.source}] ${entry.message}`
+      })
+      .join("\n")
+
+    const output = `${header}${body}`
+
+    try {
+      if (window.desktopApi?.clipboardWrite) {
+        await window.desktopApi.clipboardWrite(output)
+      } else {
+        await navigator.clipboard.writeText(output)
+      }
+      toast.success("Preview logs copied")
+    } catch (error) {
+      toast.error("Failed to copy preview logs")
+      pushPreviewLog("error", "preview-logs", "copy-failed", error)
+    }
+  }, [chatId, previewLogs, previewUrl, pushPreviewLog])
+
   // Handle path selection from URL bar
   const handlePathSelect = useCallback(
     (path: string) => {
@@ -294,11 +416,135 @@ export function AgentPreview({
           setNavIndex((prev) => prev + 1)
         }
       }
+
+      if (event.data?.type === "PREVIEW_CONSOLE_LOG") {
+        const level = event.data.level === "error" || event.data.level === "warn"
+          ? event.data.level
+          : "info"
+        const args = Array.isArray(event.data.args)
+          ? event.data.args
+          : [event.data.message ?? "preview-console-log"]
+        pushPreviewLog(level, "iframe", ...args)
+      }
     }
 
     window.addEventListener("message", handleMessage)
     return () => window.removeEventListener("message", handleMessage)
-  }, [setPersistedPath])
+  }, [setPersistedPath, pushPreviewLog])
+
+  // Capture window console warn/error while preview is open.
+  useEffect(() => {
+    const listener = (event: PreviewConsoleCaptureEvent) => {
+      pushPreviewLog(event.level, "window-console", ...event.args)
+    }
+
+    let capture = window.__agentsPreviewConsoleCapture
+    if (!capture) {
+      const listeners = new Set<(event: PreviewConsoleCaptureEvent) => void>()
+      const noop = () => {}
+      const captureState: PreviewConsoleCaptureState = {
+        listeners,
+        underlyingError:
+          typeof console.error === "function"
+            ? console.error.bind(console)
+            : noop,
+        underlyingWarn:
+          typeof console.warn === "function"
+            ? console.warn.bind(console)
+            : noop,
+        wrapperError: (...args: unknown[]) => {
+          captureState.underlyingError(...args)
+          const event: PreviewConsoleCaptureEvent = {
+            timestamp: Date.now(),
+            level: "error",
+            args,
+          }
+          captureState.listeners.forEach((cb) => cb(event))
+        },
+        wrapperWarn: (...args: unknown[]) => {
+          captureState.underlyingWarn(...args)
+          const event: PreviewConsoleCaptureEvent = {
+            timestamp: Date.now(),
+            level: "warn",
+            args,
+          }
+          captureState.listeners.forEach((cb) => cb(event))
+        },
+        patchIntervalId: 0,
+      }
+
+      const ensurePatched = () => {
+        if (console.error !== captureState.wrapperError) {
+          const next =
+            typeof console.error === "function"
+              ? console.error.bind(console)
+              : noop
+          if (next !== captureState.wrapperError) {
+            captureState.underlyingError = next
+          }
+          console.error = captureState.wrapperError as typeof console.error
+        }
+        if (console.warn !== captureState.wrapperWarn) {
+          const next =
+            typeof console.warn === "function"
+              ? console.warn.bind(console)
+              : noop
+          if (next !== captureState.wrapperWarn) {
+            captureState.underlyingWarn = next
+          }
+          console.warn = captureState.wrapperWarn as typeof console.warn
+        }
+      }
+
+      ensurePatched()
+      captureState.patchIntervalId = window.setInterval(ensurePatched, 300)
+
+      capture = captureState
+      window.__agentsPreviewConsoleCapture = capture
+    }
+
+    capture.listeners.add(listener)
+
+    return () => {
+      const state = window.__agentsPreviewConsoleCapture
+      if (!state) return
+      state.listeners.delete(listener)
+      if (state.listeners.size === 0) {
+        window.clearInterval(state.patchIntervalId)
+        if (console.error === state.wrapperError) {
+          console.error = state.underlyingError as typeof console.error
+        }
+        if (console.warn === state.wrapperWarn) {
+          console.warn = state.underlyingWarn as typeof console.warn
+        }
+        delete window.__agentsPreviewConsoleCapture
+      }
+    }
+  }, [pushPreviewLog])
+
+  // Capture global runtime failures that are often useful during preview login/debug.
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      pushPreviewLog(
+        "error",
+        "window-error",
+        event.message || "Unknown runtime error",
+        event.filename ? `(${event.filename}:${event.lineno}:${event.colno})` : "",
+      )
+    }
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      pushPreviewLog("error", "unhandledrejection", event.reason)
+    }
+
+    window.addEventListener("error", handleError)
+    window.addEventListener("unhandledrejection", handleUnhandledRejection)
+
+    return () => {
+      window.removeEventListener("error", handleError)
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection)
+    }
+  }, [pushPreviewLog])
 
   // Calculate max width on mount and window resize
   useEffect(() => {
@@ -336,12 +582,13 @@ export function AgentPreview({
       await window.desktopApi?.clearCache()
     } catch (error) {
       console.error("[Preview] Failed to clear cache:", error)
+      pushPreviewLog("error", "preview", "failed-to-clear-cache", error)
     }
     // Add cache-busting timestamp as fallback
     setCacheBuster(Date.now())
     setReloadKey((prev) => prev + 1)
     setTimeout(() => setIsRefreshing(false), 400)
-  }, [isRefreshing])
+  }, [isRefreshing, pushPreviewLog])
 
   // Handle iframe load - clears cache buster after hard refresh completes
   const handleIframeLoad = useCallback(() => {
@@ -464,21 +711,30 @@ export function AgentPreview({
       return
     }
 
-    // Handle component selection from React Grab
-    if (event.data?.type === "INSPECTOR_ELEMENT_SELECTED") {
+    // Handle component selection from React Grab (injected inspector + manual plugin)
+    if (event.data?.type === "INSPECTOR_ELEMENT_SELECTED" || event.data?.type === "REACT_GRAB_COMPONENT") {
       if (!isFromIframe && !isTrustedOrigin) {
         return
       }
-      const { content } = event.data.data
+      const content =
+        event.data?.data?.content ||
+        event.data?.content ||
+        ""
+      if (!content || typeof content !== "string") {
+        return
+      }
 
       // React Grab content format:
       // <HTML>
       // in ComponentName at path/to/file.tsx:line:col
 
       // Extract component name and path from content
-      const match = content.match(/in (\w+) at (.+):(\d+):(\d+)/)
+      const match = content.match(/in (.+?) at (.+):(\d+):(\d+)/)
       const componentName = match?.[1] || "Component"
-      const filePath = match?.[2] || "unknown"
+      const filePath = match?.[2]?.trim() || "unknown"
+
+      // Prevent duplicate insertion when clipboard fallback sees the same content.
+      lastInspectorClipboardRef.current = content
 
       // Add to chat context
       window.dispatchEvent(
@@ -499,6 +755,7 @@ export function AgentPreview({
     if (event.data?.type === "INSPECTOR_INIT_ERROR") {
       const error = event.data.error
       console.error("[Preview] Inspector init error:", error)
+      pushPreviewLog("error", "inspector", "init-error", error)
       toast.error("Inspector Mode Failed", {
         description: `Error: ${error}. Check console for details.`
       })
@@ -509,12 +766,13 @@ export function AgentPreview({
     if (event.data?.type === "INSPECTOR_LOAD_ERROR") {
       const error = event.data.error
       console.error("[Preview] Inspector load error:", error)
+      pushPreviewLog("error", "inspector", "load-error", error)
       toast.error("Inspector Mode Failed", {
         description: "Could not load React Grab. Check your internet connection."
       })
       setInspectorEnabled(false) // Desativar automaticamente
     }
-  }, [chatId, setInspectorEnabled])
+  }, [chatId, setInspectorEnabled, pushPreviewLog])
 
   // Inspector Mode: Toggle activation via Electron IPC
   useEffect(() => {
@@ -778,6 +1036,69 @@ export function AgentPreview({
 
           {/* Right: Inspector + External link + Mode toggle + Close */}
           <div className="flex items-center justify-end gap-1 flex-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="h-7 px-2 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md gap-1.5"
+                  title="Preview logs"
+                >
+                  <ListChecks className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">
+                    Logs{previewLogs.length > 0 ? ` (${previewLogs.length})` : ""}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[440px] p-0">
+                <div className="px-3 py-2 border-b border-border/50">
+                  <p className="text-xs font-medium">Preview Logs</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{previewUrl}</p>
+                </div>
+                <div className="px-2 py-2 border-b border-border/50 flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs gap-1.5"
+                    onClick={copyPreviewLogs}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy for Agent
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs gap-1.5"
+                    onClick={clearPreviewLogs}
+                    disabled={previewLogs.length === 0}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Clear
+                  </Button>
+                </div>
+                <div className="max-h-[320px] overflow-y-auto p-2 space-y-1.5">
+                  {latestPreviewLogs.length === 0 ? (
+                    <div className="text-xs text-muted-foreground px-1 py-2">
+                      No logs captured yet.
+                    </div>
+                  ) : (
+                    latestPreviewLogs.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="rounded border border-border/50 bg-background px-2 py-1.5 text-[11px] leading-relaxed"
+                      >
+                        <div className="text-[10px] text-muted-foreground mb-0.5">
+                          {new Date(entry.timestamp).toLocaleTimeString()} • {entry.level.toUpperCase()} • {entry.source}
+                        </div>
+                        <div className="whitespace-pre-wrap break-words font-mono">
+                          {entry.message}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Button
               variant="ghost"
               size="icon"
@@ -855,7 +1176,7 @@ export function AgentPreview({
                 height="100%"
                 style={{ border: "none" }}
                 title="Preview"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-top-navigation-by-user-activation"
+                sandbox={PREVIEW_IFRAME_SANDBOX}
                 allow="clipboard-write"
                 onLoad={handleIframeLoad}
                 onError={() => setIsLoaded(true)}
@@ -942,7 +1263,8 @@ export function AgentPreview({
                     border: "none",
                     borderRadius: viewportMode === "desktop" ? "8px" : "24px",
                   }}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-top-navigation-by-user-activation"
+                  sandbox={PREVIEW_IFRAME_SANDBOX}
+                  allow="clipboard-write"
                   onLoad={handleIframeLoad}
                   title="Preview"
                   tabIndex={-1}

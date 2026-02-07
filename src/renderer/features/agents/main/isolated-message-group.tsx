@@ -59,6 +59,7 @@ interface IsolatedMessageGroupProps {
   }>
   MessageGroupWrapper: React.ComponentType<{ children: React.ReactNode; isLastGroup?: boolean }>
   toolRegistry: Record<string, { icon: any; title: (args: any) => string }>
+  onRollback?: (userMsg: any) => void
 }
 
 function areGroupPropsEqual(
@@ -78,7 +79,8 @@ function areGroupPropsEqual(
     prev.UserBubbleComponent === next.UserBubbleComponent &&
     prev.ToolCallComponent === next.ToolCallComponent &&
     prev.MessageGroupWrapper === next.MessageGroupWrapper &&
-    prev.toolRegistry === next.toolRegistry
+    prev.toolRegistry === next.toolRegistry &&
+    prev.onRollback === next.onRollback
   )
 }
 
@@ -96,6 +98,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   ToolCallComponent,
   MessageGroupWrapper,
   toolRegistry,
+  onRollback,
 }: IsolatedMessageGroupProps) {
   // Subscribe to specific atoms - NOT the whole messages array
   const userMsg = useAtomValue(messageAtomFamily(userMsgId))

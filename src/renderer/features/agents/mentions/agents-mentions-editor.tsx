@@ -115,6 +115,45 @@ function createMentionNode(option: FileMentionOption): HTMLSpanElement {
   return span
 }
 
+function parseComponentMention(id: string): FileMentionOption | null {
+  if (!id.startsWith(MENTION_PREFIXES.COMPONENT)) return null
+
+  const payload = id.slice(MENTION_PREFIXES.COMPONENT.length)
+  const parts = payload.split(":")
+  if (parts.length < 4) return null
+
+  const encodedComponentName = parts[0] || ""
+  const encodedPath = parts.slice(1, -2).join(":")
+  const line = parts[parts.length - 2] || "0"
+  const column = parts[parts.length - 1] || "0"
+
+  let componentName = encodedComponentName
+  let path = encodedPath
+  try {
+    componentName = decodeURIComponent(encodedComponentName)
+  } catch {
+    // Keep raw value if decode fails
+  }
+  try {
+    path = decodeURIComponent(encodedPath)
+  } catch {
+    // Keep raw value if decode fails
+  }
+
+  const fileName = path.split(/[\\/]/).pop() || path || "component"
+  const hasLocation = line !== "0" && column !== "0"
+  const label = hasLocation ? `${fileName} ${line}:${column}` : fileName
+
+  return {
+    id,
+    label,
+    path,
+    repository: "",
+    type: "component",
+    truncatedPath: componentName || "Component",
+  }
+}
+
 // Serialize DOM to text with @[id] tokens
 function serializeContent(root: HTMLElement): string {
   let result = ""
@@ -226,6 +265,9 @@ function buildContentFromSerialized(
         const name = path.split("/").pop() || path
         option = { id, label: name, path, repository: repo, type }
       }
+    }
+    if (!option) {
+      option = parseComponentMention(id)
     }
     if (!option && id.startsWith(MENTION_PREFIXES.SKILL)) {
       // Parse skill mention: skill:skill-name
@@ -701,16 +743,7 @@ export const AgentsMentionsEditor = memo(
             }
           }
           if (id.startsWith(MENTION_PREFIXES.COMPONENT)) {
-            const parts = id.split(":")
-            if (parts.length >= 5) {
-              const name = decodeURIComponent(parts[1] || "")
-              const path = decodeURIComponent(parts.slice(2, -2).join(":"))
-              const line = parts[parts.length - 2]
-              const column = parts[parts.length - 1]
-              const fileName = path.split("/").pop() || path || "component"
-              const label = `${fileName} ${line}:${column}`.trim()
-              return { id, label, path, repository: "", type: "component", truncatedPath: name }
-            }
+            return parseComponentMention(id)
           }
           if (id.startsWith(MENTION_PREFIXES.SKILL)) {
             const skillName = id.slice(MENTION_PREFIXES.SKILL.length)

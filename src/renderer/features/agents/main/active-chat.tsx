@@ -2528,8 +2528,8 @@ const ChatViewInner = memo(function ChatViewInner({
 
   const stripComponentMentions = useCallback((value: string) => {
     return value
-      .replace(/@\\[component:[^\\]]+\\]/g, "")
-      .replace(/\\s{2,}/g, " ")
+      .replace(/@\[component:[^\]]+\]/g, "")
+      .replace(/\s{2,}/g, " ")
       .trim()
   }, [])
 
@@ -2542,41 +2542,20 @@ const ChatViewInner = memo(function ChatViewInner({
       if (eventChatId !== parentChatId && eventChatId !== subChatId) {
         return
       }
+      if (typeof componentInfo !== "string" || !componentInfo.trim()) {
+        return
+      }
 
-      // Add component info to text contexts
-      // Use a special sourceMessageId to identify component inspector contexts
-      addTextContext(componentInfo, "component-inspector")
-
-      // Add a visual chip to the input for quick reference
-      const match = componentInfo.match(/in (.+?) at (.+?):(\\d+):(\\d+)/s)
-      const componentName = match?.[1] || "Component"
-      const filePath = match?.[2] || ""
-      const line = match?.[3] || ""
-      const column = match?.[4] || ""
-      const fileName = filePath.split("/").pop() || filePath || "component"
-      const label =
-        line && column ? `${fileName} ${line}:${column}` : fileName
-
-      const mentionId = `component:${encodeURIComponent(componentName)}:${encodeURIComponent(
-        filePath,
-      )}:${line || "0"}:${column || "0"}`
+      // Add component info to text contexts using a dedicated source id.
+      // Component mentions are visual-only and stripped before send.
+      addTextContextOriginal(componentInfo, "component-inspector")
 
       editorRef.current?.focus()
-      requestAnimationFrame(() => {
-        editorRef.current?.insertMentionAtCursor({
-          id: mentionId,
-          label,
-          path: filePath,
-          repository: "",
-          type: "component",
-          truncatedPath: componentName,
-        })
-      })
     }
 
     window.addEventListener("agent-add-component-context", handleAddComponentContext as EventListener)
     return () => window.removeEventListener("agent-add-component-context", handleAddComponentContext as EventListener)
-  }, [parentChatId, subChatId, addTextContext])
+  }, [parentChatId, subChatId, addTextContextOriginal])
 
   // Watch for pending Review message and send it
   const [pendingReviewMessage, setPendingReviewMessage] = useAtom(

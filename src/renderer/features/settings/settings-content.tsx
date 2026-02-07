@@ -10,6 +10,7 @@ import { AgentsBetaTab } from "../../components/dialogs/settings-tabs/agents-bet
 import { AgentsCustomAgentsTab } from "../../components/dialogs/settings-tabs/agents-custom-agents-tab"
 import { AgentsDebugTab } from "../../components/dialogs/settings-tabs/agents-debug-tab"
 import { AgentsKeyboardTab } from "../../components/dialogs/settings-tabs/agents-keyboard-tab"
+import { AgentsLanguageTab } from "../../components/dialogs/settings-tabs/agents-language-tab"
 import { AgentsMcpTab } from "../../components/dialogs/settings-tabs/agents-mcp-tab"
 import { AgentsModelsTab } from "../../components/dialogs/settings-tabs/agents-models-tab"
 import { AgentsPreferencesTab } from "../../components/dialogs/settings-tabs/agents-preferences-tab"
@@ -45,6 +46,8 @@ export function SettingsContent() {
         return <AgentsProfileTab />
       case "appearance":
         return <AgentsAppearanceTab />
+      case "language":
+        return <AgentsLanguageTab />
       case "keyboard":
         return <AgentsKeyboardTab />
       case "preferences":
