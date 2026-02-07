@@ -16,6 +16,7 @@ import { createAppRouter } from "../lib/trpc/routers"
 import { getAuthManager, handleAuthCode, getBaseUrl } from "../index"
 import { registerGitWatcherIPC } from "../lib/git/watcher"
 import { registerThemeScannerIPC } from "../lib/vscode-theme-scanner"
+import { getStaticServerPort } from "../lib/static-server"
 import { windowManager } from "./window-manager"
 
 // Helper to get window from IPC event
@@ -807,8 +808,13 @@ function showLoginPageInWindow(window: BrowserWindow): void {
     console.log("[Main] Loading login from:", loginPath)
     window.loadFile(loginPath)
   } else {
-    // Production: load from built output
-    window.loadFile(join(__dirname, "../renderer/login.html"))
+    // Production: use local HTTP server to avoid file://
+    const port = getStaticServerPort()
+    if (port) {
+      window.loadURL(`http://127.0.0.1:${port}/login.html`)
+    } else {
+      window.loadFile(join(__dirname, "../renderer/login.html"))
+    }
   }
 }
 
@@ -1146,12 +1152,20 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
         window.webContents.openDevTools()
       }
     } else {
-      // Pass params via hash for production (file:// URLs)
-      const hashParams = new URLSearchParams()
-      buildParams(hashParams)
-      window.loadFile(join(__dirname, "../renderer/index.html"), {
-        hash: hashParams.toString(),
-      })
+      // Production: use local HTTP server to avoid file:// (fixes third-party cookie blocking in iframes)
+      const port = getStaticServerPort()
+      if (port) {
+        const url = new URL(`http://127.0.0.1:${port}/index.html`)
+        buildParams(url.searchParams)
+        window.loadURL(url.toString())
+      } else {
+        // Fallback to file:// if static server failed to start
+        const hashParams = new URLSearchParams()
+        buildParams(hashParams)
+        window.loadFile(join(__dirname, "../renderer/index.html"), {
+          hash: hashParams.toString(),
+        })
+      }
     }
   } else {
     console.log("[Main] ✗ Not authenticated, showing login page")
@@ -1160,7 +1174,13 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
       const loginPath = join(app.getAppPath(), "src/renderer/login.html")
       window.loadFile(loginPath)
     } else {
-      window.loadFile(join(__dirname, "../renderer/login.html"))
+      // Production: use local HTTP server to avoid file://
+      const port = getStaticServerPort()
+      if (port) {
+        window.loadURL(`http://127.0.0.1:${port}/login.html`)
+      } else {
+        window.loadFile(join(__dirname, "../renderer/login.html"))
+      }
     }
   }
 

@@ -26,6 +26,7 @@ import {
   parseLaunchDirectory,
 } from "./lib/cli"
 import { cleanupGitWatchers } from "./lib/git/watcher"
+import { startStaticServer, stopStaticServer, getStaticServerPort } from "./lib/static-server"
 import { cancelAllPendingOAuth, handleMcpOAuthCallback } from "./lib/mcp-auth"
 import {
   createMainWindow,
@@ -153,10 +154,17 @@ export async function handleAuthCode(code: string): Promise<void> {
           url.searchParams.set("windowId", stableId)
           win.loadURL(url.toString())
         } else {
-          // Pass window ID via hash for production
-          win.loadFile(join(__dirname, "../renderer/index.html"), {
-            hash: `windowId=${stableId}`,
-          })
+          // Production: use local HTTP server to avoid file://
+          const port = getStaticServerPort()
+          if (port) {
+            const url = new URL(`http://127.0.0.1:${port}/index.html`)
+            url.searchParams.set("windowId", stableId)
+            win.loadURL(url.toString())
+          } else {
+            win.loadFile(join(__dirname, "../renderer/index.html"), {
+              hash: `windowId=${stableId}`,
+            })
+          }
         }
       } catch (error) {
         // Window may have been destroyed during iteration
@@ -854,6 +862,18 @@ if (gotTheLock) {
       console.error("[App] Failed to initialize database:", error)
     }
 
+    // Start static server in production (serves renderer via HTTP instead of file://)
+    // This fixes third-party cookie blocking when preview iframes use localhost
+    if (!process.env.ELECTRON_RENDERER_URL) {
+      try {
+        const rendererDir = join(__dirname, "../renderer")
+        await startStaticServer(rendererDir)
+        console.log("[App] Static server started for renderer files")
+      } catch (error) {
+        console.error("[App] Failed to start static server, falling back to file://:", error)
+      }
+    }
+
     // Create main window
     createMainWindow()
 
@@ -908,6 +928,7 @@ if (gotTheLock) {
   // Cleanup before quit
   app.on("before-quit", async () => {
     console.log("[App] Shutting down...")
+    stopStaticServer()
     cancelAllPendingOAuth()
     await cleanupGitWatchers()
     await shutdownAnalytics()
