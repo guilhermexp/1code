@@ -1191,6 +1191,30 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
       window.setWindowButtonVisibility(true)
     }
   })
+
+  // Capture console messages from preview iframe frames and forward to renderer
+  {
+    let rendererOrigin = ""
+    window.webContents.on("did-finish-load", () => {
+      try {
+        rendererOrigin = new URL(window.webContents.getURL()).origin
+      } catch {
+        rendererOrigin = ""
+      }
+    })
+
+    window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+      // Only forward messages from non-app frames (preview iframe)
+      if (!sourceId || level < 1) return // skip verbose/debug and empty sources
+      try {
+        const sourceOrigin = new URL(sourceId).origin
+        if (sourceOrigin === rendererOrigin) return // skip app's own messages
+      } catch {
+        return // skip invalid URLs
+      }
+      window.webContents.send("preview:console-log", { level, message, line, sourceId })
+    })
+  }
   window.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription) => {

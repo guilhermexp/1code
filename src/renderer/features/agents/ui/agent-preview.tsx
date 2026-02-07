@@ -546,6 +546,25 @@ export function AgentPreview({
     }
   }, [pushPreviewLog])
 
+  // Capture console messages from preview iframe via Electron IPC (console-message event)
+  useEffect(() => {
+    if (!window.desktopApi?.onPreviewConsoleLog) return
+
+    const unsubscribe = window.desktopApi.onPreviewConsoleLog((data) => {
+      // Electron levels: 0=verbose, 1=info, 2=warning, 3=error
+      const levelMap: Record<number, PreviewLogLevel> = {
+        1: "info",
+        2: "warn",
+        3: "error",
+      }
+      const level = levelMap[data.level] || "info"
+      const location = data.sourceId ? ` (${data.sourceId}:${data.line})` : ""
+      pushPreviewLog(level, "iframe-console", data.message + location)
+    })
+
+    return unsubscribe
+  }, [pushPreviewLog])
+
   // Calculate max width on mount and window resize
   useEffect(() => {
     const updateMaxWidth = () => {

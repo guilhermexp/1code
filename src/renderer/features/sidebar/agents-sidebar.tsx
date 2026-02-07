@@ -40,7 +40,7 @@ import {
 } from "../../lib/hooks/use-remote-chats"
 import { usePrefetchLocalChat } from "../../lib/hooks/use-prefetch-local-chat"
 import { ArchivePopover } from "../agents/ui/archive-popover"
-import { ChevronDown, MoreHorizontal, Columns3, ArrowUpRight } from "lucide-react"
+import { ChevronDown, MoreHorizontal, Columns3, ArrowUpRight, Folder } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { remoteTrpc } from "../../lib/remote-trpc"
 // import { useRouter } from "next/navigation" // Desktop doesn't use next/navigation
@@ -808,6 +808,7 @@ function chatListSectionPropsAreEqual(
   if (prevProps.isMobileFullscreen !== nextProps.isMobileFullscreen) return false
   if (prevProps.isDesktop !== nextProps.isDesktop) return false
   if (prevProps.showIcon !== nextProps.showIcon) return false
+  if (prevProps.expandAllProjects !== nextProps.expandAllProjects) return false
 
   // Check arrays by reference (they're stable from useMemo in parent)
   if (prevProps.chats !== nextProps.chats) return false
@@ -862,6 +863,7 @@ interface ChatListSectionProps {
   canShowPinOption: boolean
   areAllSelectedPinned: boolean
   showIcon: boolean
+  expandAllProjects: boolean
   onChatClick: (chatId: string, e?: React.MouseEvent, globalIndex?: number) => void
   onCheckboxClick: (e: React.MouseEvent, chatId: string) => void
   onMouseEnter: (chatId: string, chatName: string | null, element: HTMLElement, globalIndex: number) => void
@@ -905,6 +907,7 @@ const ChatListSection = React.memo(function ChatListSection({
   canShowPinOption,
   areAllSelectedPinned,
   showIcon,
+  expandAllProjects,
   onChatClick,
   onCheckboxClick,
   onMouseEnter,
@@ -934,6 +937,78 @@ const ChatListSection = React.memo(function ChatListSection({
     return map
   }, [filteredChats])
 
+  const projectGroups = useMemo(() => {
+    type ChatListItem = ChatListSectionProps["chats"][number]
+    const groups: Array<{ key: string; name: string; chats: ChatListItem[] }> = []
+    const groupsMap = new Map<string, { key: string; name: string; chats: ChatListItem[] }>()
+
+    for (const chat of chats) {
+      const project = chat.projectId ? projectsMap.get(chat.projectId) : null
+      const groupName = chat.isRemote
+        ? chat.meta?.repository || "Remote project"
+        : project?.gitRepo || project?.name || "Unknown project"
+      const groupKey = chat.isRemote
+        ? `remote:${chat.meta?.repository || "unknown"}`
+        : `local:${chat.projectId || groupName}`
+
+      let group = groupsMap.get(groupKey)
+      if (!group) {
+        group = { key: groupKey, name: groupName, chats: [] }
+        groupsMap.set(groupKey, group)
+        groups.push(group)
+      }
+      group.chats.push(chat)
+    }
+
+    return groups
+  }, [chats, projectsMap])
+
+  const [expandedProjectKeys, setExpandedProjectKeys] = useState<Set<string>>(
+    () => new Set(),
+  )
+
+  useEffect(() => {
+    setExpandedProjectKeys((prev) => {
+      const projectKeys = new Set(projectGroups.map((group) => group.key))
+      const next = new Set<string>()
+      let changed = false
+
+      for (const key of prev) {
+        if (projectKeys.has(key)) {
+          next.add(key)
+        } else {
+          changed = true
+        }
+      }
+
+      for (const key of projectKeys) {
+        if (!next.has(key)) {
+          next.add(key)
+          changed = true
+        }
+      }
+
+      return changed ? next : prev
+    })
+  }, [projectGroups])
+
+  useEffect(() => {
+    if (!expandAllProjects) return
+    setExpandedProjectKeys(new Set(projectGroups.map((group) => group.key)))
+  }, [expandAllProjects, projectGroups])
+
+  const handleToggleProject = useCallback((projectKey: string) => {
+    setExpandedProjectKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(projectKey)) {
+        next.delete(projectKey)
+      } else {
+        next.add(projectKey)
+      }
+      return next
+    })
+  }, [])
+
   return (
     <>
       <div
@@ -947,93 +1022,135 @@ const ChatListSection = React.memo(function ChatListSection({
         </h3>
       </div>
       <div className="list-none p-0 m-0 mb-3">
-        {chats.map((chat) => {
-          const isLoading = loadingChatIds.has(chat.id)
-          // For remote chats, compare without prefix; for local, compare directly
-          // Remote chat IDs in list have "remote_" prefix, but selectedChatId is the original ID
-          const chatOriginalId = chat.isRemote ? chat.id.replace(/^remote_/, '') : chat.id
-          const isSelected = selectedChatId === chatOriginalId && selectedChatIsRemote === chat.isRemote
-          const isPinned = pinnedChatIds.has(chat.id)
-          const globalIndex = globalIndexMap.get(chat.id) ?? -1
-          const isFocused = focusedChatIndex === globalIndex && focusedChatIndex >= 0
-
-          // For remote chats, get repo info from meta; for local, from projectsMap
-          const project = chat.projectId ? projectsMap.get(chat.projectId) : null
-          const repoName = chat.isRemote
-            ? chat.meta?.repository
-            : (project?.gitRepo || project?.name)
-          const displayText = chat.branch
-            ? repoName
-              ? `${repoName} • ${chat.branch}`
-              : chat.branch
-            : repoName || (chat.isRemote ? "Remote project" : "Local project")
-
-          const isChecked = selectedChatIds.has(chat.id)
-          // TODO: remote stats disabled — backend no longer computes them (was causing 50s+ loads)
-          // Will re-enable once stats are precomputed at write time
-          const stats = chat.isRemote ? null : workspaceFileStats.get(chat.id)
-          const hasPendingPlan = workspacePendingPlans.has(chat.id)
-          const hasPendingQuestion = workspacePendingQuestions.has(chat.id)
-          const isLastInFilteredChats = globalIndex === filteredChats.length - 1
-          const isJustCreated = justCreatedIds.has(chat.id)
-
-          // For remote chats, extract gitOwner from meta.repository (e.g. "owner/repo" -> "owner")
-          const gitOwner = chat.isRemote
-            ? chat.meta?.repository?.split('/')[0]
-            : project?.gitOwner
-          const gitProvider = chat.isRemote ? 'github' : project?.gitProvider
+        {projectGroups.map((group) => {
+          const isExpanded = expandAllProjects || expandedProjectKeys.has(group.key)
 
           return (
-            <AgentChatItem
-              key={chat.id}
-              chatId={chat.id}
-              chatName={chat.name}
-              chatBranch={chat.branch}
-              chatUpdatedAt={chat.updatedAt}
-              chatProjectId={chat.projectId ?? ""}
-              globalIndex={globalIndex}
-              isSelected={isSelected}
-              isLoading={isLoading}
-              hasUnseenChanges={unseenChanges.has(chat.id)}
-              hasPendingPlan={hasPendingPlan}
-              hasPendingQuestion={hasPendingQuestion}
-              isMultiSelectMode={isMultiSelectMode}
-              isChecked={isChecked}
-              isFocused={isFocused}
-              isMobileFullscreen={isMobileFullscreen}
-              isDesktop={isDesktop}
-              isPinned={isPinned}
-              displayText={displayText}
-              gitOwner={gitOwner}
-              gitProvider={gitProvider}
-              stats={stats ?? undefined}
-              selectedChatIdsSize={selectedChatIds.size}
-              canShowPinOption={canShowPinOption}
-              areAllSelectedPinned={areAllSelectedPinned}
-              filteredChatsLength={filteredChats.length}
-              isLastInFilteredChats={isLastInFilteredChats}
-              showIcon={showIcon}
-              onChatClick={onChatClick}
-              onCheckboxClick={onCheckboxClick}
-              onMouseEnter={onMouseEnter}
-              onMouseLeave={onMouseLeave}
-              onArchive={onArchive}
-              onTogglePin={onTogglePin}
-              onRenameClick={onRenameClick}
-              onCopyBranch={onCopyBranch}
-              onArchiveAllBelow={onArchiveAllBelow}
-              onArchiveOthers={onArchiveOthers}
-              onOpenLocally={onOpenLocally}
-              onBulkPin={onBulkPin}
-              onBulkUnpin={onBulkUnpin}
-              onBulkArchive={onBulkArchive}
-              archivePending={archivePending}
-              archiveBatchPending={archiveBatchPending}
-              isRemote={chat.isRemote}
-              nameRefCallback={nameRefCallback}
-              formatTime={formatTime}
-              isJustCreated={isJustCreated}
-            />
+            <div key={group.key} className="mb-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!expandAllProjects) {
+                    handleToggleProject(group.key)
+                  }
+                }}
+                className={cn(
+                  "w-full flex items-center gap-1.5 py-1 text-muted-foreground hover:text-foreground transition-colors duration-150",
+                  isMultiSelectMode ? "pl-3 pr-2" : "pl-2 pr-2",
+                )}
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 transition-transform duration-150",
+                    isExpanded ? "rotate-0" : "-rotate-90",
+                  )}
+                />
+                <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="text-sm truncate flex-1 text-left">{group.name}</span>
+                <span className="text-[11px] text-muted-foreground/70 flex-shrink-0">
+                  {group.chats.length}
+                </span>
+              </button>
+
+              {isExpanded && (
+                <div
+                  className={cn(
+                    "list-none p-0 m-0",
+                    isMultiSelectMode ? "pl-2" : "pl-3",
+                  )}
+                >
+                  {group.chats.map((chat) => {
+                    const isLoading = loadingChatIds.has(chat.id)
+                    // For remote chats, compare without prefix; for local, compare directly
+                    // Remote chat IDs in list have "remote_" prefix, but selectedChatId is the original ID
+                    const chatOriginalId = chat.isRemote ? chat.id.replace(/^remote_/, '') : chat.id
+                    const isSelected = selectedChatId === chatOriginalId && selectedChatIsRemote === chat.isRemote
+                    const isPinned = pinnedChatIds.has(chat.id)
+                    const globalIndex = globalIndexMap.get(chat.id) ?? -1
+                    const isFocused = focusedChatIndex === globalIndex && focusedChatIndex >= 0
+
+                    // For remote chats, get repo info from meta; for local, from projectsMap
+                    const project = chat.projectId ? projectsMap.get(chat.projectId) : null
+                    const repoName = chat.isRemote
+                      ? chat.meta?.repository
+                      : (project?.gitRepo || project?.name)
+                    const displayText = chat.branch
+                      ? repoName
+                        ? `${repoName} • ${chat.branch}`
+                        : chat.branch
+                      : repoName || (chat.isRemote ? "Remote project" : "Local project")
+
+                    const isChecked = selectedChatIds.has(chat.id)
+                    // TODO: remote stats disabled — backend no longer computes them (was causing 50s+ loads)
+                    // Will re-enable once stats are precomputed at write time
+                    const stats = chat.isRemote ? null : workspaceFileStats.get(chat.id)
+                    const hasPendingPlan = workspacePendingPlans.has(chat.id)
+                    const hasPendingQuestion = workspacePendingQuestions.has(chat.id)
+                    const isLastInFilteredChats = globalIndex === filteredChats.length - 1
+                    const isJustCreated = justCreatedIds.has(chat.id)
+
+                    // For remote chats, extract gitOwner from meta.repository (e.g. "owner/repo" -> "owner")
+                    const gitOwner = chat.isRemote
+                      ? chat.meta?.repository?.split('/')[0]
+                      : project?.gitOwner
+                    const gitProvider = chat.isRemote ? 'github' : project?.gitProvider
+
+                    return (
+                      <AgentChatItem
+                        key={chat.id}
+                        chatId={chat.id}
+                        chatName={chat.name}
+                        chatBranch={chat.branch}
+                        chatUpdatedAt={chat.updatedAt}
+                        chatProjectId={chat.projectId ?? ""}
+                        globalIndex={globalIndex}
+                        isSelected={isSelected}
+                        isLoading={isLoading}
+                        hasUnseenChanges={unseenChanges.has(chat.id)}
+                        hasPendingPlan={hasPendingPlan}
+                        hasPendingQuestion={hasPendingQuestion}
+                        isMultiSelectMode={isMultiSelectMode}
+                        isChecked={isChecked}
+                        isFocused={isFocused}
+                        isMobileFullscreen={isMobileFullscreen}
+                        isDesktop={isDesktop}
+                        isPinned={isPinned}
+                        displayText={displayText}
+                        gitOwner={gitOwner}
+                        gitProvider={gitProvider}
+                        stats={stats ?? undefined}
+                        selectedChatIdsSize={selectedChatIds.size}
+                        canShowPinOption={canShowPinOption}
+                        areAllSelectedPinned={areAllSelectedPinned}
+                        filteredChatsLength={filteredChats.length}
+                        isLastInFilteredChats={isLastInFilteredChats}
+                        showIcon={showIcon}
+                        onChatClick={onChatClick}
+                        onCheckboxClick={onCheckboxClick}
+                        onMouseEnter={onMouseEnter}
+                        onMouseLeave={onMouseLeave}
+                        onArchive={onArchive}
+                        onTogglePin={onTogglePin}
+                        onRenameClick={onRenameClick}
+                        onCopyBranch={onCopyBranch}
+                        onArchiveAllBelow={onArchiveAllBelow}
+                        onArchiveOthers={onArchiveOthers}
+                        onOpenLocally={onOpenLocally}
+                        onBulkPin={onBulkPin}
+                        onBulkUnpin={onBulkUnpin}
+                        onBulkArchive={onBulkArchive}
+                        archivePending={archivePending}
+                        archiveBatchPending={archiveBatchPending}
+                        isRemote={chat.isRemote}
+                        nameRefCallback={nameRefCallback}
+                        formatTime={formatTime}
+                        isJustCreated={isJustCreated}
+                      />
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
         })}
       </div>
@@ -3265,6 +3382,7 @@ export function AgentsSidebar({
                 canShowPinOption={canShowPinOption}
                 areAllSelectedPinned={areAllSelectedPinned}
                 showIcon={showWorkspaceIcon}
+                expandAllProjects={searchQuery.trim().length > 0}
                 onChatClick={handleChatClick}
                 onCheckboxClick={handleCheckboxClick}
                 onMouseEnter={handleAgentMouseEnter}
@@ -3308,6 +3426,7 @@ export function AgentsSidebar({
                 canShowPinOption={canShowPinOption}
                 areAllSelectedPinned={areAllSelectedPinned}
                 showIcon={showWorkspaceIcon}
+                expandAllProjects={searchQuery.trim().length > 0}
                 onChatClick={handleChatClick}
                 onCheckboxClick={handleCheckboxClick}
                 onMouseEnter={handleAgentMouseEnter}
