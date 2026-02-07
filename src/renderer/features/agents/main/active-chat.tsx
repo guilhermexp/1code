@@ -6760,6 +6760,17 @@ Make sure to preserve all functionality from both branches when resolving confli
     isDiffSidebarOpen &&
     !isMobileFullscreen)
 
+  // Reserve a safe area for native macOS traffic lights when both sidebars are closed.
+  // This prevents occasional overlap while native visibility toggles are catching up.
+  const shouldReserveMacTrafficLightArea =
+    isDesktop &&
+    !isFullscreen &&
+    !isMobileFullscreen &&
+    !isSidebarOpen &&
+    subChatsSidebarMode !== "sidebar" &&
+    typeof window !== "undefined" &&
+    window.desktopApi?.platform === "darwin"
+
   // No early return - let the UI render with loading state handled by activeChat check below
 
   return (
@@ -6790,7 +6801,10 @@ Make sure to preserve all functionality from both branches when resolving confli
                 // Mobile: always flex; Desktop: absolute when sidebar open, flex when closed
                 !isMobileFullscreen && subChatsSidebarMode === "sidebar"
                   ? `absolute top-0 left-0 right-0 ${CHAT_LAYOUT.headerPaddingSidebarOpen}`
-                  : `flex-shrink-0 ${CHAT_LAYOUT.headerPaddingSidebarClosed}`,
+                  : cn(
+                      `flex-shrink-0 ${CHAT_LAYOUT.headerPaddingSidebarClosed}`,
+                      shouldReserveMacTrafficLightArea && "pl-[88px]",
+                    ),
               )}
             >
               {/* Gradient background - only when not absolute */}
