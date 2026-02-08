@@ -57,26 +57,6 @@ interface PreviewLogEntry {
   message: string
 }
 
-interface PreviewConsoleCaptureEvent {
-  timestamp: number
-  level: "error" | "warn"
-  args: unknown[]
-}
-
-interface PreviewConsoleCaptureState {
-  listeners: Set<(event: PreviewConsoleCaptureEvent) => void>
-  underlyingError: (...args: unknown[]) => void
-  underlyingWarn: (...args: unknown[]) => void
-  wrapperError: (...args: unknown[]) => void
-  wrapperWarn: (...args: unknown[]) => void
-  patchIntervalId: number
-}
-
-declare global {
-  interface Window {
-    __agentsPreviewConsoleCapture?: PreviewConsoleCaptureState
-  }
-}
 
 const MAX_PREVIEW_LOGS = 250
 
@@ -418,9 +398,9 @@ export function AgentPreview({
       }
 
       if (event.data?.type === "PREVIEW_CONSOLE_LOG") {
-        const level = event.data.level === "error" || event.data.level === "warn"
-          ? event.data.level
-          : "info"
+        // Only capture warnings and errors to reduce noise
+        if (event.data.level !== "error" && event.data.level !== "warn") return
+        const level = event.data.level as PreviewLogLevel
         const args = Array.isArray(event.data.args)
           ? event.data.args
           : [event.data.message ?? "preview-console-log"]
@@ -432,132 +412,19 @@ export function AgentPreview({
     return () => window.removeEventListener("message", handleMessage)
   }, [setPersistedPath, pushPreviewLog])
 
-  // Capture window console warn/error while preview is open.
-  useEffect(() => {
-    const listener = (event: PreviewConsoleCaptureEvent) => {
-      pushPreviewLog(event.level, "window-console", ...event.args)
-    }
-
-    let capture = window.__agentsPreviewConsoleCapture
-    if (!capture) {
-      const listeners = new Set<(event: PreviewConsoleCaptureEvent) => void>()
-      const noop = () => {}
-      const captureState: PreviewConsoleCaptureState = {
-        listeners,
-        underlyingError:
-          typeof console.error === "function"
-            ? console.error.bind(console)
-            : noop,
-        underlyingWarn:
-          typeof console.warn === "function"
-            ? console.warn.bind(console)
-            : noop,
-        wrapperError: (...args: unknown[]) => {
-          captureState.underlyingError(...args)
-          const event: PreviewConsoleCaptureEvent = {
-            timestamp: Date.now(),
-            level: "error",
-            args,
-          }
-          captureState.listeners.forEach((cb) => cb(event))
-        },
-        wrapperWarn: (...args: unknown[]) => {
-          captureState.underlyingWarn(...args)
-          const event: PreviewConsoleCaptureEvent = {
-            timestamp: Date.now(),
-            level: "warn",
-            args,
-          }
-          captureState.listeners.forEach((cb) => cb(event))
-        },
-        patchIntervalId: 0,
-      }
-
-      const ensurePatched = () => {
-        if (console.error !== captureState.wrapperError) {
-          const next =
-            typeof console.error === "function"
-              ? console.error.bind(console)
-              : noop
-          if (next !== captureState.wrapperError) {
-            captureState.underlyingError = next
-          }
-          console.error = captureState.wrapperError as typeof console.error
-        }
-        if (console.warn !== captureState.wrapperWarn) {
-          const next =
-            typeof console.warn === "function"
-              ? console.warn.bind(console)
-              : noop
-          if (next !== captureState.wrapperWarn) {
-            captureState.underlyingWarn = next
-          }
-          console.warn = captureState.wrapperWarn as typeof console.warn
-        }
-      }
-
-      ensurePatched()
-      captureState.patchIntervalId = window.setInterval(ensurePatched, 300)
-
-      capture = captureState
-      window.__agentsPreviewConsoleCapture = capture
-    }
-
-    capture.listeners.add(listener)
-
-    return () => {
-      const state = window.__agentsPreviewConsoleCapture
-      if (!state) return
-      state.listeners.delete(listener)
-      if (state.listeners.size === 0) {
-        window.clearInterval(state.patchIntervalId)
-        if (console.error === state.wrapperError) {
-          console.error = state.underlyingError as typeof console.error
-        }
-        if (console.warn === state.wrapperWarn) {
-          console.warn = state.underlyingWarn as typeof console.warn
-        }
-        delete window.__agentsPreviewConsoleCapture
-      }
-    }
-  }, [pushPreviewLog])
-
-  // Capture global runtime failures that are often useful during preview login/debug.
-  useEffect(() => {
-    const handleError = (event: ErrorEvent) => {
-      pushPreviewLog(
-        "error",
-        "window-error",
-        event.message || "Unknown runtime error",
-        event.filename ? `(${event.filename}:${event.lineno}:${event.colno})` : "",
-      )
-    }
-
-    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      pushPreviewLog("error", "unhandledrejection", event.reason)
-    }
-
-    window.addEventListener("error", handleError)
-    window.addEventListener("unhandledrejection", handleUnhandledRejection)
-
-    return () => {
-      window.removeEventListener("error", handleError)
-      window.removeEventListener("unhandledrejection", handleUnhandledRejection)
-    }
-  }, [pushPreviewLog])
-
   // Capture console messages from preview iframe via Electron IPC (console-message event)
   useEffect(() => {
     if (!window.desktopApi?.onPreviewConsoleLog) return
 
     const unsubscribe = window.desktopApi.onPreviewConsoleLog((data) => {
       // Electron levels: 0=verbose, 1=info, 2=warning, 3=error
+      // Only capture warnings and errors to reduce noise
+      if (data.level < 2) return
       const levelMap: Record<number, PreviewLogLevel> = {
-        1: "info",
         2: "warn",
         3: "error",
       }
-      const level = levelMap[data.level] || "info"
+      const level = levelMap[data.level] || "warn"
       const location = data.sourceId ? ` (${data.sourceId}:${data.line})` : ""
       pushPreviewLog(level, "iframe-console", data.message + location)
     })
@@ -1084,6 +951,19 @@ export function AgentPreview({
                     Copy for Agent
                   </Button>
                   <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs gap-1.5"
+                    onClick={() => {
+                      clearPreviewLogs()
+                      setReloadKey((prev) => prev + 1)
+                    }}
+                    title="Clear logs and reload preview to capture fresh logs"
+                  >
+                    <RotateCw className="h-3.5 w-3.5" />
+                    Refresh
+                  </Button>
+                  <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 px-2 text-xs gap-1.5"
@@ -1103,7 +983,12 @@ export function AgentPreview({
                     latestPreviewLogs.map((entry) => (
                       <div
                         key={entry.id}
-                        className="rounded border border-border/50 bg-background px-2 py-1.5 text-[11px] leading-relaxed"
+                        className={cn(
+                          "rounded border px-2 py-1.5 text-[11px] leading-relaxed",
+                          entry.level === "error"
+                            ? "border-red-500/40 bg-red-500/5"
+                            : "border-border/50 bg-background"
+                        )}
                       >
                         <div className="text-[10px] text-muted-foreground mb-0.5">
                           {new Date(entry.timestamp).toLocaleTimeString()} • {entry.level.toUpperCase()} • {entry.source}

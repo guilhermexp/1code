@@ -157,7 +157,7 @@ export async function handleAuthCode(code: string): Promise<void> {
           // Production: use local HTTP server to avoid file://
           const port = getStaticServerPort()
           if (port) {
-            const url = new URL(`http://127.0.0.1:${port}/index.html`)
+            const url = new URL(`http://localhost:${port}/index.html`)
             url.searchParams.set("windowId", stableId)
             win.loadURL(url.toString())
           } else {

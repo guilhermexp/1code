@@ -34,7 +34,9 @@ const MIME_TYPES: Record<string, string> = {
  * This avoids file:// protocol which causes third-party cookie issues
  * when the renderer embeds localhost iframes (preview feature).
  *
- * Binds to 127.0.0.1 only (not exposed to network).
+ * Binds to localhost so the renderer shares the same origin hostname
+ * as preview iframes (e.g. localhost:3001). Using 127.0.0.1 would be
+ * a different origin and cause third-party cookie blocking.
  * Uses port 0 so the OS assigns a free port.
  */
 export function startStaticServer(rootDir: string): Promise<number> {
@@ -45,7 +47,7 @@ export function startStaticServer(rootDir: string): Promise<number> {
   return new Promise((resolve, reject) => {
     server = createServer(async (req, res) => {
       try {
-        const url = new URL(req.url || "/", "http://127.0.0.1")
+        const url = new URL(req.url || "/", "http://localhost")
         let pathname = decodeURIComponent(url.pathname)
 
         // Default to index.html
@@ -93,11 +95,11 @@ export function startStaticServer(rootDir: string): Promise<number> {
       }
     })
 
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(0, "localhost", () => {
       const addr = server!.address()
       if (addr && typeof addr === "object") {
         serverPort = addr.port
-        console.log(`[StaticServer] Serving ${rootDir} on http://127.0.0.1:${serverPort}`)
+        console.log(`[StaticServer] Serving ${rootDir} on http://localhost:${serverPort}`)
         resolve(serverPort)
       } else {
         reject(new Error("Failed to get server address"))

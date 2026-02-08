@@ -811,7 +811,7 @@ function showLoginPageInWindow(window: BrowserWindow): void {
     // Production: use local HTTP server to avoid file://
     const port = getStaticServerPort()
     if (port) {
-      window.loadURL(`http://127.0.0.1:${port}/login.html`)
+      window.loadURL(`http://localhost:${port}/login.html`)
     } else {
       window.loadFile(join(__dirname, "../renderer/login.html"))
     }
@@ -956,91 +956,53 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
       key => key.toLowerCase() === 'content-security-policy'
     )
 
-    // Allow loading localhost in iframes and jsdelivr CDN by modifying CSP
-    if (cspHeaderKey && responseHeaders[cspHeaderKey]) {
-      const originalCSP = responseHeaders[cspHeaderKey]
-      if (isLocalhost) {
-        console.log(`[CSP] Found ${cspHeaderKey} header for ${details.url}`)
-        console.log(`[CSP] Original value:`, originalCSP)
+    // Permissive CSP for localhost preview iframes.
+    // Local dev servers (Next.js, Vite, etc.) set restrictive CSPs that block
+    // external auth providers (Clerk, Auth0, Firebase) from framing their domains.
+    // Since these are the user's own dev servers, we replace with a fully permissive CSP.
+    const PERMISSIVE_CSP = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; connect-src * ws: wss:; frame-src *; child-src * blob:; worker-src * blob:"
+
+    if (isLocalhost) {
+      // Replace any existing CSP with permissive one for localhost
+      if (cspHeaderKey) {
+        console.log(`[CSP] Replacing restrictive CSP for localhost ${details.url}`)
+        responseHeaders[cspHeaderKey] = [PERMISSIVE_CSP]
+      } else {
+        console.log(`[CSP] No CSP found for localhost ${details.url}, injecting permissive CSP`)
+        responseHeaders["Content-Security-Policy"] = [PERMISSIVE_CSP]
       }
+    } else if (cspHeaderKey && responseHeaders[cspHeaderKey]) {
+      // For non-localhost URLs, add our required sources to existing CSP
+      const addSources = (
+        currentCsp: string,
+        directive: string,
+        sources: string[]
+      ) => {
+        const pattern = new RegExp(`${directive} ([^;]*)`)
+        if (pattern.test(currentCsp)) {
+          return currentCsp.replace(pattern, (_match, existing) => {
+            const missing = sources.filter((source) => !existing.includes(source))
+            if (missing.length === 0) return `${directive} ${existing}`
+            return `${directive} ${existing} ${missing.join(" ")}`
+          })
+        }
+        return `${currentCsp}; ${directive} ${sources.join(" ")}`
+      }
+
       responseHeaders[cspHeaderKey] = (responseHeaders[cspHeaderKey] as string[]).map((csp: string) => {
-        const addSources = (
-          currentCsp: string,
-          directive: string,
-          sources: string[]
-        ) => {
-          const pattern = new RegExp(`${directive} ([^;]*)`)
-          if (pattern.test(currentCsp)) {
-            return currentCsp.replace(pattern, (_match, existing) => {
-              const missing = sources.filter((source) => !existing.includes(source))
-              if (missing.length === 0) return `${directive} ${existing}`
-              return `${directive} ${existing} ${missing.join(" ")}`
-            })
-          }
-          return `${currentCsp}; ${directive} ${sources.join(" ")}`
-        }
-
-        // Remove frame-ancestors directive for localhost (it blocks iframe embedding)
-        const removeFrameAncestors = (currentCsp: string): string => {
-          // Remove frame-ancestors directive entirely for localhost URLs
-          return currentCsp.replace(/frame-ancestors\s+[^;]*(;|$)/gi, '')
-        }
-
         let modifiedCSP = csp
-
-        // For localhost URLs, remove frame-ancestors to allow embedding in our preview
-        if (isLocalhost) {
-          modifiedCSP = removeFrameAncestors(modifiedCSP)
-          console.log(`[CSP] Removed frame-ancestors for localhost ${details.url}`)
-        }
-
         modifiedCSP = addSources(modifiedCSP, "frame-src", [
-          "'self'",
-          "http://localhost:*",
-          "http://127.0.0.1:*",
-          "ws://localhost:*",
-          "ws://127.0.0.1:*"
+          "'self'", "http://localhost:*", "http://127.0.0.1:*", "ws://localhost:*", "ws://127.0.0.1:*"
         ])
         modifiedCSP = addSources(modifiedCSP, "child-src", [
-          "'self'",
-          "http://localhost:*",
-          "http://127.0.0.1:*"
+          "'self'", "http://localhost:*", "http://127.0.0.1:*"
         ])
-        // For localhost, also allow unsafe-inline for inline scripts (needed by Next.js, React, etc.)
-        const scriptSources = isLocalhost
-          ? ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net", "https://unpkg.com"]
-          : ["'self'", "https://cdn.jsdelivr.net", "https://unpkg.com"]
-
-        modifiedCSP = addSources(modifiedCSP, "script-src-elem", scriptSources)
-        modifiedCSP = addSources(modifiedCSP, "script-src", scriptSources)
-        // For localhost, also allow WebSocket connections for hot reload
-        const connectSources = isLocalhost
-          ? ["'self'", "ws://localhost:*", "ws://127.0.0.1:*", "http://localhost:*", "http://127.0.0.1:*", "https://cdn.jsdelivr.net", "https://unpkg.com", "https://www.react-grab.com"]
-          : ["'self'", "https://cdn.jsdelivr.net", "https://unpkg.com"]
-
-        modifiedCSP = addSources(modifiedCSP, "connect-src", connectSources)
-        modifiedCSP = addSources(modifiedCSP, "style-src", [
-          "'self'",
-          "'unsafe-inline'",
-          "https://cdn.jsdelivr.net",
-          "https://unpkg.com"
-        ])
-
-        if (modifiedCSP !== csp) {
-          console.log(`[CSP] Modified CSP for ${details.url}`)
-          console.log(`[CSP] Original:`, originalCSP)
-          console.log(`[CSP] Modified:`, modifiedCSP)
-        }
-
+        modifiedCSP = addSources(modifiedCSP, "script-src-elem", ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://unpkg.com"])
+        modifiedCSP = addSources(modifiedCSP, "script-src", ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://unpkg.com"])
+        modifiedCSP = addSources(modifiedCSP, "connect-src", ["'self'", "https://cdn.jsdelivr.net", "https://unpkg.com"])
+        modifiedCSP = addSources(modifiedCSP, "style-src", ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://unpkg.com"])
         return modifiedCSP
       })
-    } else if (isLocalhost) {
-      // If localhost has no CSP, inject a permissive one for Inspector Mode
-      console.log(`[CSP] No CSP found for localhost ${details.url}, injecting permissive CSP`)
-      // Use standard PascalCase for the header
-      responseHeaders["Content-Security-Policy"] = [
-        "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; connect-src * ws: wss:; worker-src * blob:"
-      ]
     }
 
     callback({ responseHeaders })
@@ -1155,7 +1117,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
       // Production: use local HTTP server to avoid file:// (fixes third-party cookie blocking in iframes)
       const port = getStaticServerPort()
       if (port) {
-        const url = new URL(`http://127.0.0.1:${port}/index.html`)
+        const url = new URL(`http://localhost:${port}/index.html`)
         buildParams(url.searchParams)
         window.loadURL(url.toString())
       } else {
@@ -1177,7 +1139,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
       // Production: use local HTTP server to avoid file://
       const port = getStaticServerPort()
       if (port) {
-        window.loadURL(`http://127.0.0.1:${port}/login.html`)
+        window.loadURL(`http://localhost:${port}/login.html`)
       } else {
         window.loadFile(join(__dirname, "../renderer/login.html"))
       }
@@ -1204,14 +1166,20 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
     })
 
     window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
-      // Only forward messages from non-app frames (preview iframe)
-      if (!sourceId || level < 1) return // skip verbose/debug and empty sources
+      // Only forward warnings (2) and errors (3) from non-app frames (preview iframe)
+      if (!sourceId || level < 2) return // skip verbose, debug, and info
       try {
-        const sourceOrigin = new URL(sourceId).origin
-        if (sourceOrigin === rendererOrigin) return // skip app's own messages
+        const sourceUrl = new URL(sourceId)
+        if (sourceUrl.origin === rendererOrigin) return // skip app's own messages
+        // Only forward messages from localhost/127.0.0.1 (user's preview server)
+        // This filters out noise from external embeds (YouTube, CDNs, etc.)
+        const host = sourceUrl.hostname
+        if (host !== 'localhost' && host !== '127.0.0.1') return
       } catch {
         return // skip invalid URLs
       }
+      // Skip React Grab / 1code Inspector noise
+      if (message.startsWith("[React Grab]") || message.startsWith("[1code Inspector]") || message.startsWith("%cReact Grab")) return
       window.webContents.send("preview:console-log", { level, message, line, sourceId })
     })
   }
