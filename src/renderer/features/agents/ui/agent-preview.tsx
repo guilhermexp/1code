@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useRef, useCallback, useEffect, useMemo } from "react"
+import { useState, useRef, useCallback, useEffect, useMemo, createElement } from "react"
 import { useAtom } from "jotai"
 import { Button } from "../../../components/ui/button"
-import { RotateCw, RefreshCcwDot, Target, ChevronLeft, ChevronRight, Copy, Trash2, ListChecks } from "lucide-react"
+import { RotateCw, RefreshCcwDot, Target, ChevronLeft, ChevronRight, Copy, Trash2, ListChecks, Code } from "lucide-react"
 import {
   ExternalLinkIcon,
   IconDoubleChevronRight,
@@ -42,11 +42,6 @@ interface AgentPreviewProps {
   isMobile?: boolean
 }
 
-// Auth flows inside embedded previews often require storage access and
-// top-level navigation handoffs during OAuth redirects.
-const PREVIEW_IFRAME_SANDBOX =
-  "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-top-navigation allow-top-navigation-by-user-activation allow-storage-access-by-user-activation"
-
 type PreviewLogLevel = "error" | "warn" | "info"
 
 interface PreviewLogEntry {
@@ -59,6 +54,46 @@ interface PreviewLogEntry {
 
 
 const MAX_PREVIEW_LOGS = 250
+
+function normalizePreviewBaseUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) return "about:blank"
+  if (trimmed === "about:blank") return trimmed
+
+  let candidate = trimmed
+  const hasScheme = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(candidate)
+  if (!hasScheme) {
+    const isLocal = /^(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(candidate)
+    candidate = `${isLocal ? "http" : "https"}://${candidate}`
+  }
+
+  try {
+    const parsed = new URL(candidate)
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return candidate.replace(/\/$/, "")
+    }
+    return "about:blank"
+  } catch {
+    return "about:blank"
+  }
+}
+
+function normalizePreviewPath(rawPath: string): string {
+  const trimmed = rawPath.trim()
+  if (!trimmed) return "/"
+  if (trimmed === "/blank" || trimmed === "blank") return "/"
+
+  try {
+    const parsed = new URL(trimmed)
+    const path = `${parsed.pathname || "/"}${parsed.search}${parsed.hash}`
+    if (!path || path === "/blank") return "/"
+    return path
+  } catch {
+    if (trimmed.startsWith("/")) return trimmed
+    if (trimmed.startsWith("?") || trimmed.startsWith("#")) return `/${trimmed}`
+    return `/${trimmed}`
+  }
+}
 
 function serializeLogValue(value: unknown): string {
   if (value instanceof Error) {
@@ -77,6 +112,32 @@ function serializeLogValue(value: unknown): string {
   return String(value)
 }
 
+function shouldIgnorePreviewLog(message: string): boolean {
+  if (!message) return true
+  const normalized = message.toLowerCase()
+
+  if (
+    normalized.includes("electron security warning (insecure content-security-policy)") ||
+    normalized.includes("[vue warn]: extraneous non-emits event listeners (videoclick)")
+  ) {
+    return true
+  }
+
+  return false
+}
+
+function dispatchInspectorSelection(chatId: string, content: string) {
+  if (!content || typeof content !== "string") return
+  window.dispatchEvent(
+    new CustomEvent("agent-add-component-context", {
+      detail: {
+        chatId,
+        componentInfo: content,
+      },
+    }),
+  )
+}
+
 export function AgentPreview({
   chatId,
   sandboxId,
@@ -92,9 +153,12 @@ export function AgentPreview({
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [cacheBuster, setCacheBuster] = useState<number | null>(null)
   const [editableCustomUrl, setEditableCustomUrl] = useState(customUrl || "")
-  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const [webviewEl, setWebviewEl] = useState<Electron.WebviewTag | null>(null)
+  const [webviewDomReady, setWebviewDomReady] = useState(false)
   const frameRef = useRef<HTMLDivElement>(null)
   const resizeCleanupRef = useRef<(() => void) | null>(null)
+  const [webviewCanGoBack, setWebviewCanGoBack] = useState(false)
+  const [webviewCanGoForward, setWebviewCanGoForward] = useState(false)
 
   // Persisted state from Jotai atoms (per chatId)
   const [persistedPath, setPersistedPath] = useAtom(
@@ -121,6 +185,7 @@ export function AgentPreview({
     (level: PreviewLogLevel, source: string, ...args: unknown[]) => {
       const message = args.map(serializeLogValue).join(" ").trim()
       if (!message) return
+      if (shouldIgnorePreviewLog(message)) return
       const entry: PreviewLogEntry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         timestamp: Date.now(),
@@ -142,16 +207,47 @@ export function AgentPreview({
     [previewLogs],
   )
 
-  // Dual state architecture:
-  // - loadedPath: Controls iframe src (stable, only changes on manual navigation)
+  // - loadedPath: Controls webview src (stable, only changes on manual navigation)
   // - currentPath: Display path (updates immediately on internal navigation)
   const [loadedPath, setLoadedPath] = useState(persistedPath)
   const [currentPath, setCurrentPath] = useState(persistedPath)
 
-  // Navigation history state
-  const [navHistory, setNavHistory] = useState<string[]>([persistedPath])
-  const [navIndex, setNavIndex] = useState(0)
-  const isNavigatingRef = useRef(false) // Prevents adding to history during back/forward
+  const updateWebviewNavState = useCallback(() => {
+    const webview = webviewEl
+    if (!webview || !webviewDomReady) return
+    try {
+      setWebviewCanGoBack(webview.canGoBack())
+      setWebviewCanGoForward(webview.canGoForward())
+    } catch {
+      setWebviewCanGoBack(false)
+      setWebviewCanGoForward(false)
+    }
+  }, [webviewEl, webviewDomReady])
+
+  useEffect(() => {
+    if (!webviewEl) return
+
+    setWebviewDomReady(false)
+
+    const handleDomReady = () => {
+      setWebviewDomReady(true)
+      updateWebviewNavState()
+    }
+
+    const handleDestroyed = () => {
+      setWebviewDomReady(false)
+      setWebviewCanGoBack(false)
+      setWebviewCanGoForward(false)
+    }
+
+    webviewEl.addEventListener("dom-ready", handleDomReady as EventListener)
+    webviewEl.addEventListener("destroyed", handleDestroyed as EventListener)
+
+    return () => {
+      webviewEl.removeEventListener("dom-ready", handleDomReady as EventListener)
+      webviewEl.removeEventListener("destroyed", handleDestroyed as EventListener)
+    }
+  }, [webviewEl, updateWebviewNavState])
 
   // Listen for reload events from external header
   useEffect(() => {
@@ -178,9 +274,10 @@ export function AgentPreview({
   useEffect(() => {
     const handleNavigate = (e: CustomEvent) => {
       if (e.detail?.chatId === chatId && e.detail?.path) {
-        setLoadedPath(e.detail.path)
-        setCurrentPath(e.detail.path)
-        setPersistedPath(e.detail.path)
+        const nextPath = normalizePreviewPath(String(e.detail.path))
+        setLoadedPath(nextPath)
+        setCurrentPath(nextPath)
+        setPersistedPath(nextPath)
         setIsLoaded(false)
       }
     }
@@ -207,9 +304,13 @@ export function AgentPreview({
 
   // Sync loadedPath when persistedPath changes (e.g., on mount with stored value)
   useEffect(() => {
-    setLoadedPath(persistedPath)
-    setCurrentPath(persistedPath)
-  }, [persistedPath])
+    const normalizedPath = normalizePreviewPath(persistedPath)
+    setLoadedPath(normalizedPath)
+    setCurrentPath(normalizedPath)
+    if (normalizedPath !== persistedPath) {
+      setPersistedPath(normalizedPath)
+    }
+  }, [persistedPath, setPersistedPath])
 
   // Sync editableCustomUrl when customUrl prop changes
   useEffect(() => {
@@ -222,15 +323,14 @@ export function AgentPreview({
   const handleCustomUrlChange = useCallback((newUrl: string) => {
     setEditableCustomUrl(newUrl)
     setIsLoaded(false) // Show loading state
-    setReloadKey((prev) => prev + 1) // Force iframe reload
+    setReloadKey((prev) => prev + 1) // Force webview remount
   }, [])
 
   // Compute base host and preview URL
   const previewBaseUrl = useMemo(() => {
     // Priority: editableCustomUrl > sandboxId > fallback
     if (editableCustomUrl) {
-      // Remove trailing slash if present
-      return editableCustomUrl.replace(/\/$/, "")
+      return normalizePreviewBaseUrl(editableCustomUrl)
     }
     if (sandboxId && port) {
       return getSandboxPreviewUrl(sandboxId, port, "agents")
@@ -242,19 +342,42 @@ export function AgentPreview({
     try {
       return new URL(previewBaseUrl).host
     } catch {
-      return "localhost"
+      return null
     }
   }, [previewBaseUrl])
 
   const previewUrl = useMemo(() => {
     if (previewBaseUrl === "about:blank") return previewBaseUrl
-    // For custom URLs, check if it already includes a path
-    let url: string
-    if (editableCustomUrl && editableCustomUrl.includes(loadedPath) && loadedPath !== "/") {
-      url = editableCustomUrl
-    } else {
-      url = `${previewBaseUrl}${loadedPath}`
+    const safePath = normalizePreviewPath(loadedPath)
+
+    let url = `${previewBaseUrl}${safePath}`
+    if (editableCustomUrl) {
+      const normalizedCustom = normalizePreviewBaseUrl(editableCustomUrl)
+      if (normalizedCustom !== "about:blank") {
+        if (safePath === "/") {
+          url = normalizedCustom
+        } else {
+          try {
+            const parsed = new URL(normalizedCustom)
+            url = `${parsed.origin}${safePath}`
+          } catch {
+            url = normalizedCustom
+          }
+        }
+      } else {
+        return "about:blank"
+      }
     }
+
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return "about:blank"
+      }
+    } catch {
+      return "about:blank"
+    }
+
     // Add cache-buster for hard refresh
     if (cacheBuster) {
       const separator = url.includes("?") ? "&" : "?"
@@ -302,135 +425,152 @@ export function AgentPreview({
   // Handle path selection from URL bar
   const handlePathSelect = useCallback(
     (path: string) => {
-      setLoadedPath(path) // Triggers iframe reload via src change
-      setCurrentPath(path) // Updates URL bar display
-      setPersistedPath(path) // Persist to localStorage
+      const normalizedPath = normalizePreviewPath(path)
+      setLoadedPath(normalizedPath)
+      setCurrentPath(normalizedPath)
+      setPersistedPath(normalizedPath)
       setIsLoaded(false) // Show loading state
-
-      // Add to navigation history (only if not navigating via back/forward)
-      if (!isNavigatingRef.current) {
-        setNavHistory((prev) => {
-          // Remove any forward history and add new path
-          const newHistory = [...prev.slice(0, navIndex + 1), path]
-          return newHistory
-        })
-        setNavIndex((prev) => prev + 1)
-      }
     },
-    [setPersistedPath, navIndex],
+    [setPersistedPath],
   )
 
   // Navigation: Go back
   const handleNavBack = useCallback(() => {
-    if (navIndex > 0) {
-      isNavigatingRef.current = true
-      const newIndex = navIndex - 1
-      const path = navHistory[newIndex]
-      setNavIndex(newIndex)
-      setLoadedPath(path)
-      setCurrentPath(path)
-      setPersistedPath(path)
-      setIsLoaded(false)
-      setTimeout(() => {
-        isNavigatingRef.current = false
-      }, 100)
+    const webview = webviewEl
+    if (webviewDomReady && webview) {
+      try {
+        if (webview.canGoBack()) {
+          webview.goBack()
+        }
+      } catch {
+        setWebviewCanGoBack(false)
+        setWebviewCanGoForward(false)
+      }
     }
-  }, [navIndex, navHistory, setPersistedPath])
+  }, [webviewEl, webviewDomReady])
 
   // Navigation: Go forward
   const handleNavForward = useCallback(() => {
-    if (navIndex < navHistory.length - 1) {
-      isNavigatingRef.current = true
-      const newIndex = navIndex + 1
-      const path = navHistory[newIndex]
-      setNavIndex(newIndex)
-      setLoadedPath(path)
-      setCurrentPath(path)
-      setPersistedPath(path)
-      setIsLoaded(false)
-      setTimeout(() => {
-        isNavigatingRef.current = false
-      }, 100)
+    const webview = webviewEl
+    if (webviewDomReady && webview) {
+      try {
+        if (webview.canGoForward()) {
+          webview.goForward()
+        }
+      } catch {
+        setWebviewCanGoBack(false)
+        setWebviewCanGoForward(false)
+      }
     }
-  }, [navIndex, navHistory, setPersistedPath])
+  }, [webviewEl, webviewDomReady])
 
   // Check if can navigate
-  const canGoBack = navIndex > 0
-  const canGoForward = navIndex < navHistory.length - 1
+  const canGoBack = webviewCanGoBack
+  const canGoForward = webviewCanGoForward
 
-  // Listen for SET_URL messages from iframe for bi-directional sync
+  // Listen for navigation events from Chromium webview (full browser context)
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // Verify source is our iframe
-      if (
-        !iframeRef.current ||
-        event.source !== iframeRef.current.contentWindow
-      ) {
+    const webview = webviewEl
+    if (!webview) return
+
+    const updatePathFromUrl = (urlString: string) => {
+      try {
+        const url = new URL(urlString)
+        const nextPath = `${url.pathname || "/"}${url.search}${url.hash}` || "/"
+        setCurrentPath(nextPath)
+        setLoadedPath(nextPath)
+        setPersistedPath(nextPath)
+      } catch {
+        // Ignore invalid URLs emitted during provisional navigation
+      }
+    }
+
+    const handleStartLoading = () => {
+      setIsLoaded(false)
+      if (webviewDomReady) {
+        updateWebviewNavState()
+      }
+    }
+    const handleStopLoading = () => {
+      setIsLoaded(true)
+      if (cacheBuster) {
+        setCacheBuster(null)
+      }
+      if (webviewDomReady) {
+        updateWebviewNavState()
+      }
+    }
+    const handleNavigate = (event: Event) => {
+      const url = (event as { url?: string }).url
+      if (url) {
+        updatePathFromUrl(url)
+      }
+      if (webviewDomReady) {
+        updateWebviewNavState()
+      }
+    }
+    const handleConsoleMessage = (event: Event) => {
+      const payload = event as {
+        level?: number
+        message?: string
+        line?: number
+        sourceId?: string
+      }
+      const rawMessage = payload.message ?? ""
+      const inspectorPrefix = "__1CODE_INSPECTOR_SELECTED__::"
+      if (rawMessage.startsWith(inspectorPrefix)) {
+        try {
+          const encoded = rawMessage.slice(inspectorPrefix.length)
+          const content = decodeURIComponent(encoded)
+          lastInspectorClipboardRef.current = content
+          dispatchInspectorSelection(chatId, content)
+          toast.success("Component added to context")
+        } catch (error) {
+          pushPreviewLog("error", "inspector", "decode-failed", error)
+        }
         return
       }
 
-      // Handle SET_URL messages from preview script
-      if (event.data?.type === "SET_URL") {
-        const newPath = event.data.url || "/"
-
-        // Skip srcdoc paths (edge case from iframe)
-        if (newPath.includes("srcdoc")) {
-          return
-        }
-
-        // Update ONLY currentPath for immediate display update
-        // Do NOT update loadedPath - that would cause iframe remount
-        setCurrentPath(newPath)
-        setPersistedPath(newPath) // Persist to localStorage
-
-        // Add to navigation history (only if not navigating via back/forward and path changed)
-        if (!isNavigatingRef.current) {
-          setNavHistory((prev) => {
-            const lastPath = prev[prev.length - 1]
-            if (lastPath === newPath) return prev // Don't duplicate
-            // Remove any forward history and add new path
-            const currentIndex = prev.indexOf(lastPath)
-            const newHistory = [...prev.slice(0, currentIndex + 1), newPath]
-            return newHistory
-          })
-          setNavIndex((prev) => prev + 1)
-        }
-      }
-
-      if (event.data?.type === "PREVIEW_CONSOLE_LOG") {
-        // Only capture warnings and errors to reduce noise
-        if (event.data.level !== "error" && event.data.level !== "warn") return
-        const level = event.data.level as PreviewLogLevel
-        const args = Array.isArray(event.data.args)
-          ? event.data.args
-          : [event.data.message ?? "preview-console-log"]
-        pushPreviewLog(level, "iframe", ...args)
-      }
-    }
-
-    window.addEventListener("message", handleMessage)
-    return () => window.removeEventListener("message", handleMessage)
-  }, [setPersistedPath, pushPreviewLog])
-
-  // Capture console messages from preview iframe via Electron IPC (console-message event)
-  useEffect(() => {
-    if (!window.desktopApi?.onPreviewConsoleLog) return
-
-    const unsubscribe = window.desktopApi.onPreviewConsoleLog((data) => {
-      // Electron levels: 0=verbose, 1=info, 2=warning, 3=error
-      // Only capture warnings and errors to reduce noise
-      if (data.level < 2) return
+      if ((payload.level ?? 0) < 2) return
       const levelMap: Record<number, PreviewLogLevel> = {
         2: "warn",
         3: "error",
       }
-      const level = levelMap[data.level] || "warn"
-      const location = data.sourceId ? ` (${data.sourceId}:${data.line})` : ""
-      pushPreviewLog(level, "iframe-console", data.message + location)
-    })
+      const level = levelMap[payload.level ?? 2] || "warn"
+      const location = payload.sourceId
+        ? ` (${payload.sourceId}:${payload.line ?? 0})`
+        : ""
+      pushPreviewLog(level, "webview-console", `${rawMessage}${location}`)
+    }
 
-    return unsubscribe
-  }, [pushPreviewLog])
+    webview.addEventListener("did-start-loading", handleStartLoading as EventListener)
+    webview.addEventListener("did-stop-loading", handleStopLoading as EventListener)
+    webview.addEventListener("did-fail-load", handleStopLoading as EventListener)
+    webview.addEventListener("did-navigate", handleNavigate as EventListener)
+    webview.addEventListener("did-navigate-in-page", handleNavigate as EventListener)
+    webview.addEventListener("console-message", handleConsoleMessage as EventListener)
+
+    if (webviewDomReady) {
+      updateWebviewNavState()
+    }
+
+    return () => {
+      webview.removeEventListener("did-start-loading", handleStartLoading as EventListener)
+      webview.removeEventListener("did-stop-loading", handleStopLoading as EventListener)
+      webview.removeEventListener("did-fail-load", handleStopLoading as EventListener)
+      webview.removeEventListener("did-navigate", handleNavigate as EventListener)
+      webview.removeEventListener("did-navigate-in-page", handleNavigate as EventListener)
+      webview.removeEventListener("console-message", handleConsoleMessage as EventListener)
+    }
+  }, [
+    chatId,
+    webviewEl,
+    webviewDomReady,
+    cacheBuster,
+    setPersistedPath,
+    pushPreviewLog,
+    updateWebviewNavState,
+  ])
 
   // Calculate max width on mount and window resize
   useEffect(() => {
@@ -455,9 +595,13 @@ export function AgentPreview({
     if (isRefreshing) return
     setIsRefreshing(true)
     setIsLoaded(false)
-    setReloadKey((prev) => prev + 1)
+    if (webviewDomReady) {
+      webviewEl?.reload()
+    } else {
+      setReloadKey((prev) => prev + 1)
+    }
     setTimeout(() => setIsRefreshing(false), 400)
-  }, [isRefreshing])
+  }, [webviewEl, webviewDomReady, isRefreshing])
 
   const handleHardReload = useCallback(async () => {
     if (isRefreshing) return
@@ -470,20 +614,31 @@ export function AgentPreview({
       console.error("[Preview] Failed to clear cache:", error)
       pushPreviewLog("error", "preview", "failed-to-clear-cache", error)
     }
-    // Add cache-busting timestamp as fallback
-    setCacheBuster(Date.now())
-    setReloadKey((prev) => prev + 1)
-    setTimeout(() => setIsRefreshing(false), 400)
-  }, [isRefreshing, pushPreviewLog])
-
-  // Handle iframe load - clears cache buster after hard refresh completes
-  const handleIframeLoad = useCallback(() => {
-    setIsLoaded(true)
-    // Clear cache buster after load so subsequent navigations don't have it
-    if (cacheBuster) {
-      setCacheBuster(null)
+    if (webviewDomReady) {
+      webviewEl?.reloadIgnoringCache()
+    } else {
+      setReloadKey((prev) => prev + 1)
     }
-  }, [cacheBuster])
+    setTimeout(() => setIsRefreshing(false), 400)
+  }, [webviewEl, webviewDomReady, isRefreshing, pushPreviewLog])
+
+  const handleInspectorToggle = useCallback(() => {
+    setInspectorEnabled((prev) => !prev)
+  }, [])
+
+  const handleOpenPreviewDevTools = useCallback(() => {
+    if (!webviewEl || !webviewDomReady) {
+      toast.message("Preview DevTools available when Chromium preview is ready")
+      return
+    }
+
+    try {
+      webviewEl.openDevTools()
+    } catch (error) {
+      pushPreviewLog("error", "webview-devtools", "open-failed", error)
+      toast.error("Failed to open Preview DevTools")
+    }
+  }, [webviewEl, webviewDomReady, pushPreviewLog])
 
   const handlePresetChange = useCallback(
     (presetName: string) => {
@@ -580,105 +735,120 @@ export function AgentPreview({
     [device, maxWidth, setDevice],
   )
 
-  // Inspector Mode: Handle messages from iframe
-  const handleInspectorMessage = useCallback((event: MessageEvent) => {
-    const iframeWindow = iframeRef.current?.contentWindow
-    const isFromIframe = Boolean(iframeWindow && event.source === iframeWindow)
-    const isInspectorEvent =
-      event.data?.type &&
-      typeof event.data.type === "string" &&
-      event.data.type.startsWith("INSPECTOR_")
-    const isTrustedOrigin =
-      event.origin === "null" ||
-      event.origin.includes("http://localhost") ||
-      event.origin.includes("http://127.0.0.1")
-
-    if (!isFromIframe && !isInspectorEvent) {
-      return
-    }
-
-    // Handle component selection from React Grab (injected inspector + manual plugin)
-    if (event.data?.type === "INSPECTOR_ELEMENT_SELECTED" || event.data?.type === "REACT_GRAB_COMPONENT") {
-      if (!isFromIframe && !isTrustedOrigin) {
-        return
-      }
-      const content =
-        event.data?.data?.content ||
-        event.data?.content ||
-        ""
-      if (!content || typeof content !== "string") {
-        return
-      }
-
-      // React Grab content format:
-      // <HTML>
-      // in ComponentName at path/to/file.tsx:line:col
-
-      // Extract component name and path from content
-      const match = content.match(/in (.+?) at (.+):(\d+):(\d+)/)
-      const componentName = match?.[1] || "Component"
-      const filePath = match?.[2]?.trim() || "unknown"
-
-      // Prevent duplicate insertion when clipboard fallback sees the same content.
-      lastInspectorClipboardRef.current = content
-
-      // Add to chat context
-      window.dispatchEvent(
-        new CustomEvent("agent-add-component-context", {
-          detail: {
-            chatId,
-            componentInfo: content // Send full content with HTML + component info
-          }
-        })
-      )
-
-      toast.success("Component added to context", {
-        description: `${componentName} from ${filePath}`
-      })
-    }
-
-    // Handle initialization errors
-    if (event.data?.type === "INSPECTOR_INIT_ERROR") {
-      const error = event.data.error
-      console.error("[Preview] Inspector init error:", error)
-      pushPreviewLog("error", "inspector", "init-error", error)
-      toast.error("Inspector Mode Failed", {
-        description: `Error: ${error}. Check console for details.`
-      })
-      setInspectorEnabled(false) // Desativar automaticamente
-    }
-
-    // Handle script load errors
-    if (event.data?.type === "INSPECTOR_LOAD_ERROR") {
-      const error = event.data.error
-      console.error("[Preview] Inspector load error:", error)
-      pushPreviewLog("error", "inspector", "load-error", error)
-      toast.error("Inspector Mode Failed", {
-        description: "Could not load React Grab. Check your internet connection."
-      })
-      setInspectorEnabled(false) // Desativar automaticamente
-    }
-  }, [chatId, setInspectorEnabled, pushPreviewLog])
-
-  // Inspector Mode: Toggle activation via Electron IPC
+  // Inspector Mode: React Grab injection in Chromium webview
   useEffect(() => {
-    if (!isLoaded || !previewUrl || previewUrl === "about:blank") return
+    if (!webviewEl || !webviewDomReady) return
 
-    // Call Electron IPC to inject React Grab into iframe
-    window.desktopApi.inspectorInject(previewUrl, inspectorEnabled).then((success: boolean) => {
-      if (success && inspectorEnabled) {
-        const isMac = window.desktopApi.platform === "darwin"
-        const shortcut = isMac ? "⌘C" : "Ctrl+C"
-        toast.success("Inspector Mode Active", {
-          description: `Hover over any element and press ${shortcut} to select it`
-        })
-      } else if (!success && inspectorEnabled) {
-        toast.error("Inspector Mode Failed", {
-          description: "Could not activate inspector. Try reloading the preview."
-        })
-      }
-    })
-  }, [inspectorEnabled, isLoaded, previewUrl])
+    const script = `
+      (() => {
+        try {
+          const enabled = ${inspectorEnabled ? "true" : "false"};
+          const PREFIX = "__1CODE_INSPECTOR_SELECTED__::";
+
+          const emitSelection = (content) => {
+            try {
+              console.warn(PREFIX + encodeURIComponent(String(content || "")));
+            } catch (err) {
+              console.error("[1code Inspector] emit selection failed", err);
+            }
+          };
+
+          const setup = (api) => {
+            if (!api) return false;
+            window.reactGrabApi = api;
+            if (typeof api.registerPlugin === "function") {
+              api.registerPlugin({
+                name: "1code-webview",
+                hooks: {
+                  onCopySuccess: (...args) => {
+                    let content = "";
+                    for (const arg of args) {
+                      if (typeof arg === "string") { content = arg; break; }
+                    }
+                    if (!content) {
+                      for (const arg of args) {
+                        if (arg && typeof arg === "object") {
+                          if (typeof arg.content === "string") { content = arg.content; break; }
+                          if (typeof arg.text === "string") { content = arg.text; break; }
+                        }
+                      }
+                    }
+                    if (content) emitSelection(content);
+                  }
+                }
+              });
+            }
+
+            if (enabled && typeof api.activate === "function") api.activate();
+            if (!enabled && typeof api.deactivate === "function") api.deactivate();
+            return true;
+          };
+
+          const initIfAvailable = () => {
+            if (window.__REACT_GRAB__) return setup(window.__REACT_GRAB__);
+            if (window.ReactGrab && typeof window.ReactGrab.init === "function") {
+              const api = window.ReactGrab.init({
+                onElementSelect: (element) => {
+                  try {
+                    if (window.reactGrabApi && typeof window.reactGrabApi.copyElement === "function") {
+                      window.reactGrabApi.copyElement(element);
+                    }
+                  } catch {}
+                }
+              });
+              return setup(api);
+            }
+            return false;
+          };
+
+          if (initIfAvailable()) return true;
+
+          const head = document.head || document.getElementsByTagName("head")[0] || document.documentElement;
+          if (!head) return false;
+
+          if (!document.querySelector('link[href*="react-grab"]')) {
+            const css = document.createElement("link");
+            css.rel = "stylesheet";
+            css.href = "https://cdn.jsdelivr.net/npm/react-grab@latest/dist/styles.css";
+            head.appendChild(css);
+          }
+
+          if (!document.querySelector('script[src*="react-grab"]')) {
+            const scriptTag = document.createElement("script");
+            scriptTag.src = "https://cdn.jsdelivr.net/npm/react-grab@latest/dist/index.global.js";
+            scriptTag.async = true;
+            scriptTag.onload = () => { initIfAvailable(); };
+            head.appendChild(scriptTag);
+          } else {
+            setTimeout(() => { initIfAvailable(); }, 100);
+          }
+
+          return true;
+        } catch (err) {
+          console.error("[1code Inspector] webview injection failed", err);
+          return false;
+        }
+      })();
+    `
+
+    webviewEl.executeJavaScript(script, true)
+      .then((ok) => {
+        if (ok && inspectorEnabled) {
+          const isMac = window.desktopApi.platform === "darwin"
+          const shortcut = isMac ? "⌘C" : "Ctrl+C"
+          toast.success("Inspector Mode Active", {
+            description: `Hover over any element and press ${shortcut} to select it`,
+          })
+        } else if (!ok && inspectorEnabled) {
+          toast.error("Inspector Mode Failed", {
+            description: "Could not activate inspector in Chromium preview.",
+          })
+        }
+      })
+      .catch((error) => {
+        pushPreviewLog("error", "inspector", "webview-inject-failed", error)
+      })
+  }, [webviewEl, webviewDomReady, inspectorEnabled, pushPreviewLog])
 
   // Inspector Mode: Clipboard fallback (React Grab copies to clipboard on select)
   useEffect(() => {
@@ -697,14 +867,7 @@ export function AgentPreview({
 
         lastInspectorClipboardRef.current = text
 
-        window.dispatchEvent(
-          new CustomEvent("agent-add-component-context", {
-            detail: {
-              chatId,
-              componentInfo: text,
-            },
-          }),
-        )
+        dispatchInspectorSelection(chatId, text)
       } catch {
         // Ignore clipboard polling errors
       }
@@ -716,12 +879,6 @@ export function AgentPreview({
       window.clearInterval(intervalId)
     }
   }, [inspectorEnabled, chatId])
-
-  // Listen for messages
-  useEffect(() => {
-    window.addEventListener("message", handleInspectorMessage as EventListener)
-    return () => window.removeEventListener("message", handleInspectorMessage as EventListener)
-  }, [handleInspectorMessage])
 
   return (
     <div
@@ -827,13 +984,24 @@ export function AgentPreview({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setInspectorEnabled(!inspectorEnabled)}
+              onClick={handleInspectorToggle}
               className={cn(
                 "h-7 w-7 flex-shrink-0 rounded-md",
                 inspectorEnabled && "bg-accent text-accent-foreground"
               )}
             >
               <Target className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleOpenPreviewDevTools}
+              className="h-7 w-7 flex-shrink-0 rounded-md"
+              title="Open Preview DevTools"
+              disabled={!webviewDomReady}
+            >
+              <Code className="h-4 w-4" />
             </Button>
 
             {/* Scale control */}
@@ -1006,14 +1174,29 @@ export function AgentPreview({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setInspectorEnabled(!inspectorEnabled)}
+              onClick={handleInspectorToggle}
               className={cn(
                 "h-7 w-7 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md",
                 inspectorEnabled && "bg-accent text-accent-foreground"
               )}
-              title={inspectorEnabled ? "Disable Inspector" : "Enable Inspector"}
+              title={
+                inspectorEnabled
+                  ? "Disable Inspector"
+                  : "Enable Inspector"
+              }
             >
               <Target className="h-3.5 w-3.5" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleOpenPreviewDevTools}
+              className="h-7 w-7 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
+              title="Open Preview DevTools"
+              disabled={!webviewDomReady}
+            >
+              <Code className="h-3.5 w-3.5 text-muted-foreground" />
             </Button>
 
             <Button
@@ -1057,7 +1240,7 @@ export function AgentPreview({
         )}
       >
         {isMobile ? (
-          // Mobile: Fullscreen iframe with scale support
+          // Mobile: Fullscreen webview with scale support
           <div className="relative overflow-hidden w-full h-full flex-shrink-0 bg-background">
             <div
               className="w-full h-full"
@@ -1072,19 +1255,17 @@ export function AgentPreview({
                   : undefined
               }
             >
-              <iframe
-                ref={iframeRef}
-                key={reloadKey}
-                src={previewUrl}
-                width="100%"
-                height="100%"
-                style={{ border: "none" }}
-                title="Preview"
-                sandbox={PREVIEW_IFRAME_SANDBOX}
-                allow="clipboard-write"
-                onLoad={handleIframeLoad}
-                onError={() => setIsLoaded(true)}
-              />
+              {createElement("webview" as any, {
+                key: reloadKey,
+                ref: (node: any) => {
+                  setWebviewEl(node as Electron.WebviewTag | null)
+                },
+                src: previewUrl,
+                partition: "persist:main",
+                allowpopups: "true",
+                className: "w-full h-full",
+                style: { border: "none" },
+              })}
             </div>
             {/* Loading overlay */}
             {!isLoaded && (
@@ -1157,22 +1338,20 @@ export function AgentPreview({
                     : undefined
                 }
               >
-                <iframe
-                  ref={iframeRef}
-                  key={reloadKey}
-                  src={previewUrl}
-                  width="100%"
-                  height="100%"
-                  style={{
+                {createElement("webview" as any, {
+                  key: reloadKey,
+                  ref: (node: any) => {
+                    setWebviewEl(node as Electron.WebviewTag | null)
+                  },
+                  src: previewUrl,
+                  partition: "persist:main",
+                  allowpopups: "true",
+                  className: "w-full h-full",
+                  style: {
                     border: "none",
                     borderRadius: viewportMode === "desktop" ? "8px" : "24px",
-                  }}
-                  sandbox={PREVIEW_IFRAME_SANDBOX}
-                  allow="clipboard-write"
-                  onLoad={handleIframeLoad}
-                  title="Preview"
-                  tabIndex={-1}
-                />
+                  },
+                })}
 
                 {/* Loading overlay */}
                 {!isLoaded && (

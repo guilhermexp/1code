@@ -74,6 +74,7 @@ export interface DesktopApi {
   // Clipboard
   clipboardWrite: (text: string) => Promise<void>
   clipboardRead: () => Promise<string>
+  clearCache: () => Promise<boolean>
 
   // Auth
   getUser: () => Promise<DesktopUser | null>
@@ -91,8 +92,6 @@ export interface DesktopApi {
   // Worktree setup failures
   onWorktreeSetupFailed: (callback: (payload: WorktreeSetupFailurePayload) => void) => () => void
 
-  // Preview console log capture (from iframe via main process console-message event)
-  onPreviewConsoleLog: (callback: (data: { level: number; message: string; line: number; sourceId: string }) => void) => () => void
 }
 
 declare global {

@@ -135,10 +135,6 @@ contextBridge.exposeInMainWorld("desktopApi", {
   // Cache
   clearCache: () => ipcRenderer.invoke("cache:clear"),
 
-  // Inspector Mode
-  inspectorInject: (iframeUrl: string, enabled: boolean) =>
-    ipcRenderer.invoke("inspector:inject", iframeUrl, enabled),
-
   // Auth methods
   getUser: () => ipcRenderer.invoke("auth:get-user"),
   isAuthenticated: () => ipcRenderer.invoke("auth:is-authenticated"),
@@ -237,12 +233,6 @@ contextBridge.exposeInMainWorld("desktopApi", {
   scanVSCodeThemes: () => ipcRenderer.invoke("vscode:scan-themes"),
   loadVSCodeTheme: (themePath: string) => ipcRenderer.invoke("vscode:load-theme", themePath),
 
-  // Preview console log capture (from iframe via main process console-message event)
-  onPreviewConsoleLog: (callback: (data: { level: number; message: string; line: number; sourceId: string }) => void) => {
-    const handler = (_event: unknown, data: { level: number; message: string; line: number; sourceId: string }) => callback(data)
-    ipcRenderer.on("preview:console-log", handler)
-    return () => ipcRenderer.removeListener("preview:console-log", handler)
-  },
 })
 
 // Type definitions
@@ -378,8 +368,6 @@ export interface DesktopApi {
   // VS Code theme scanning
   scanVSCodeThemes: () => Promise<DiscoveredTheme[]>
   loadVSCodeTheme: (themePath: string) => Promise<VSCodeThemeData>
-  // Preview console log capture
-  onPreviewConsoleLog: (callback: (data: { level: number; message: string; line: number; sourceId: string }) => void) => () => void
 }
 
 declare global {

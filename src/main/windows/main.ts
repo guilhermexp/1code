@@ -72,7 +72,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("app:set-badge", (event, count: number | null) => {
     const win = getWindowFromEvent(event)
     if (process.platform === "darwin") {
-      app.dock.setBadge(count ? String(count) : "")
+      app.dock?.setBadge(count ? String(count) : "")
     } else if (process.platform === "win32" && win) {
       // Windows: Update title with count as fallback
       if (count !== null && count > 0) {
@@ -257,333 +257,6 @@ function registerIpcHandlers(): void {
       console.error("[Cache] Failed to clear cache:", error)
       return false
     }
-  })
-
-  // Inspector Mode - inject script into iframe (via iframe frame execution)
-  ipcMain.handle("inspector:inject", async (_event, iframeUrl: string, enabled: boolean) => {
-    const win = getWindow()
-    if (!win) {
-      console.error("[Inspector] No window available")
-      return false
-    }
-
-    console.log("[Inspector] Injecting React Grab into iframe with URL:", iframeUrl, "enabled:", enabled)
-
-    const targetHost = (() => {
-      try {
-        return new URL(iframeUrl).host
-      } catch {
-        return ""
-      }
-    })()
-
-    const matchesFrame = (frameUrl: string) => {
-      if (!frameUrl) return false
-      if (frameUrl.startsWith("chrome-error://")) return false
-      if (frameUrl === iframeUrl || frameUrl.startsWith(iframeUrl)) return true
-      try {
-        const parsed = new URL(frameUrl)
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false
-        return parsed.host === targetHost
-      } catch {
-        return false
-      }
-    }
-
-    const findTargetFrame = () => {
-      const frames = win.webContents.mainFrame.frames
-      return frames.find((frame) => matchesFrame(frame.url))
-    }
-
-    const inspectorScript = `
-      (function() {
-        try {
-          console.log('[1code Inspector] Running in frame:', window.location.href);
-
-          // Skip injection on error pages or incomplete documents
-          if (window.location.href.startsWith('chrome-error://') || !document.documentElement) {
-            console.log('[1code Inspector] Skipping - invalid or incomplete document');
-            return false;
-          }
-
-          const enabled = ${enabled};
-
-          const postError = (type, error) => {
-            try {
-              window.parent.postMessage({ type, error }, '*');
-            } catch (err) {
-              console.error('[1code Inspector] Failed to post message to parent', err);
-            }
-          };
-
-          if (window.__1codeReactGrabInjected && window.reactGrabApi) {
-            console.log('[1code Inspector] Already injected, toggling to:', enabled);
-            if (enabled) {
-              window.reactGrabApi.activate();
-            } else {
-              window.reactGrabApi.deactivate();
-            }
-            return true;
-          }
-
-          if (window.__1codeReactGrabInjected && !window.reactGrabApi) {
-            console.warn('[1code Inspector] Marker set but API missing; reinitializing.');
-            window.__1codeReactGrabInjected = false;
-          }
-
-          const ensureHead = () =>
-            document.head || document.getElementsByTagName('head')[0] || document.documentElement;
-
-          const insertStyles = () => {
-            const href = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/styles.css';
-            const head = ensureHead();
-            if (!head) {
-              console.warn('[1code Inspector] No head element available, skipping styles');
-              return;
-            }
-            if (!document.querySelector('link[rel="stylesheet"][href*="react-grab"]')) {
-              const styleLink = document.createElement('link');
-              styleLink.rel = 'stylesheet';
-              styleLink.href = href;
-              styleLink.onload = () => console.log('[1code Inspector] CSS loaded');
-              styleLink.onerror = (e) => console.error('[1code Inspector] CSS failed to load', e);
-              head.appendChild(styleLink);
-            }
-
-            // Override React Grab z-index to render above modals/dialogs
-            if (!document.querySelector('style[data-1code-inspector-override]')) {
-              const overrideStyle = document.createElement('style');
-              overrideStyle.setAttribute('data-1code-inspector-override', 'true');
-              overrideStyle.textContent = \`
-                [class*="react-grab"], [data-react-grab],
-                .ReactGrab, [id*="react-grab"],
-                div[style*="pointer-events"][style*="position: fixed"] {
-                  z-index: 2147483647 !important;
-                }
-              \`;
-              head.appendChild(overrideStyle);
-            }
-          };
-
-          const initReactGrab = () => {
-            const handleCopySuccess = (...args) => {
-              try {
-                // Extract string content from args (signature varies across versions)
-                let content = '';
-                for (const arg of args) {
-                  if (typeof arg === 'string') {
-                    content = arg;
-                    break;
-                  }
-                }
-                if (!content) {
-                  for (const arg of args) {
-                    if (arg && typeof arg === 'object' && !(arg instanceof Element) && !(arg instanceof Node)) {
-                      if (typeof arg.content === 'string') { content = arg.content; break; }
-                      if (typeof arg.text === 'string') { content = arg.text; break; }
-                    }
-                  }
-                }
-                if (!content) {
-                  console.warn('[1code Inspector] No string content in onCopySuccess');
-                  return;
-                }
-                console.log('[1code Inspector] Component selected:', content);
-                // JSON round-trip ensures no DOM references leak into postMessage
-                var safeMsg = JSON.parse(JSON.stringify({
-                  type: 'INSPECTOR_ELEMENT_SELECTED',
-                  data: { content: String(content) }
-                }));
-                window.parent.postMessage(safeMsg, '*');
-              } catch (err) {
-                console.error('[1code Inspector] handleCopySuccess error:', err);
-              }
-            };
-
-            const setupApi = (api) => {
-              try {
-                console.log('[1code Inspector] API found, configuring');
-                window.reactGrabApi = api;
-
-                if (typeof api.registerPlugin === 'function') {
-                  api.registerPlugin({
-                    name: '1code-integration',
-                    hooks: {
-                      onCopySuccess: handleCopySuccess
-                    }
-                  });
-                }
-
-                if (enabled && typeof api.activate === 'function') {
-                  api.activate();
-                }
-
-                // Observe for dynamically added React Grab overlay elements and force z-index
-                if (!window.__1codeZIndexObserver) {
-                  window.__1codeZIndexObserver = new MutationObserver((mutations) => {
-                    for (const mutation of mutations) {
-                      for (const node of mutation.addedNodes) {
-                        if (node.nodeType === 1) {
-                          const el = node;
-                          const style = window.getComputedStyle(el);
-                          if (style.position === 'fixed' && el.style.pointerEvents) {
-                            el.style.zIndex = '2147483647';
-                          }
-                        }
-                      }
-                    }
-                  });
-                  window.__1codeZIndexObserver.observe(document.body, { childList: true, subtree: false });
-                }
-
-                window.__1codeReactGrabInjected = true;
-              } catch (error) {
-                console.error('[1code Inspector] Failed to initialize', error);
-                postError('INSPECTOR_INIT_ERROR', error && error.message ? error.message : String(error));
-              }
-            };
-
-            // v0.1.1+: API auto-initializes on window.__REACT_GRAB__
-            if (window.__REACT_GRAB__) {
-              setupApi(window.__REACT_GRAB__);
-              return;
-            }
-
-            // Legacy: older versions use window.ReactGrab with manual init()
-            if (window.ReactGrab && typeof window.ReactGrab.init === 'function') {
-              const api = window.ReactGrab.init({
-                onElementSelect: (element) => {
-                  try {
-                    if (window.reactGrabApi && typeof window.reactGrabApi.copyElement === 'function') {
-                      window.reactGrabApi.copyElement(element);
-                    }
-                  } catch (error) {
-                    console.error('[1code Inspector] Failed to copy selected element', error);
-                  }
-                },
-                onCopySuccess: handleCopySuccess
-              });
-              setupApi(api);
-              return;
-            }
-
-            // Listen for the react-grab:init custom event (v0.1.1+ fires this on load)
-            let resolved = false;
-            const onInit = (event) => {
-              if (resolved) return;
-              resolved = true;
-              console.log('[1code Inspector] Received react-grab:init event');
-              setupApi(event.detail);
-            };
-            window.addEventListener('react-grab:init', onInit, { once: true });
-
-            // Fallback: poll for both new and legacy globals
-            let attempts = 0;
-            const checkReactGrab = () => {
-              if (resolved) return;
-              attempts += 1;
-
-              if (window.__REACT_GRAB__) {
-                resolved = true;
-                window.removeEventListener('react-grab:init', onInit);
-                setupApi(window.__REACT_GRAB__);
-                return;
-              }
-
-              if (window.ReactGrab && typeof window.ReactGrab.init === 'function') {
-                resolved = true;
-                window.removeEventListener('react-grab:init', onInit);
-                const api = window.ReactGrab.init({
-                  onElementSelect: (element) => {
-                    try {
-                      if (window.reactGrabApi && typeof window.reactGrabApi.copyElement === 'function') {
-                        window.reactGrabApi.copyElement(element);
-                      }
-                    } catch (error) {
-                      console.error('[1code Inspector] Failed to copy selected element', error);
-                    }
-                  },
-                  onCopySuccess: handleCopySuccess
-                });
-                setupApi(api);
-                return;
-              }
-
-              if (attempts < 50) {
-                setTimeout(checkReactGrab, 100);
-              } else {
-                window.removeEventListener('react-grab:init', onInit);
-                console.error('[1code Inspector] ReactGrab not found after 5s');
-                postError('INSPECTOR_INIT_ERROR', 'ReactGrab not found on window');
-              }
-            };
-
-            checkReactGrab();
-          };
-
-          const loadScript = () => {
-            const src = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/index.global.js';
-            if (document.querySelector('script[src*="react-grab"]')) {
-              console.log('[1code Inspector] Script already present');
-              initReactGrab();
-              return;
-            }
-            const script = document.createElement('script');
-            script.src = src;
-            script.crossOrigin = 'anonymous';
-            script.async = true;
-            script.onload = () => {
-              console.log('[1code Inspector] Script loaded');
-              initReactGrab();
-            };
-            script.onerror = (error) => {
-              console.error('[1code Inspector] Failed to load React Grab', error);
-              postError('INSPECTOR_LOAD_ERROR', 'Failed to load React Grab script');
-            };
-            const head = ensureHead();
-            if (!head) {
-              console.warn('[1code Inspector] No head element available, skipping script load');
-              return;
-            }
-            head.appendChild(script);
-          };
-
-          insertStyles();
-          loadScript();
-          return true;
-        } catch (err) {
-          console.error('[1code Inspector] Error injecting React Grab', err);
-          return false;
-        }
-      })();
-    `
-
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-    const maxAttempts = 50
-
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const targetFrame = findTargetFrame()
-
-      if (!targetFrame) {
-        await delay(100)
-        continue
-      }
-
-      try {
-        const result = await targetFrame.executeJavaScript(inspectorScript, true)
-        console.log("[Inspector] Script execution result:", result)
-        return result !== false
-      } catch (error) {
-        console.error("[Inspector] Failed to execute script in frame:", error)
-        return false
-      }
-    }
-
-    const frameUrls = win.webContents.mainFrame.frames
-      .map((frame) => frame.url)
-      .filter(Boolean)
-    console.error("[Inspector] Could not find target iframe frame. Available frames:", frameUrls)
-    return false
   })
 
   // Auth IPC handlers
@@ -901,6 +574,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
       contextIsolation: true,
       sandbox: false, // Required for electron-trpc
       webSecurity: true,
+      webviewTag: true,
       partition: "persist:main", // Use persistent session for cookies
     },
   })
@@ -1073,6 +747,32 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
     return { action: "deny" }
   })
 
+  // Harden Chromium webviews used by preview mode
+  window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+    webPreferences.nodeIntegration = false
+    webPreferences.contextIsolation = true
+    webPreferences.sandbox = true
+    delete webPreferences.preload
+
+    const src = params.src ?? ""
+    if (!src) {
+      event.preventDefault()
+      return
+    }
+
+    try {
+      const parsed = new URL(src)
+      const protocol = parsed.protocol.toLowerCase()
+      if (protocol !== "http:" && protocol !== "https:" && src !== "about:blank") {
+        event.preventDefault()
+      }
+    } catch {
+      if (src !== "about:blank") {
+        event.preventDefault()
+      }
+    }
+  })
+
   // Handle window close
   window.on("closed", () => {
     console.log(`[Main] Window ${window.id} closed`)
@@ -1154,35 +854,6 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
     }
   })
 
-  // Capture console messages from preview iframe frames and forward to renderer
-  {
-    let rendererOrigin = ""
-    window.webContents.on("did-finish-load", () => {
-      try {
-        rendererOrigin = new URL(window.webContents.getURL()).origin
-      } catch {
-        rendererOrigin = ""
-      }
-    })
-
-    window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
-      // Only forward warnings (2) and errors (3) from non-app frames (preview iframe)
-      if (!sourceId || level < 2) return // skip verbose, debug, and info
-      try {
-        const sourceUrl = new URL(sourceId)
-        if (sourceUrl.origin === rendererOrigin) return // skip app's own messages
-        // Only forward messages from localhost/127.0.0.1 (user's preview server)
-        // This filters out noise from external embeds (YouTube, CDNs, etc.)
-        const host = sourceUrl.hostname
-        if (host !== 'localhost' && host !== '127.0.0.1') return
-      } catch {
-        return // skip invalid URLs
-      }
-      // Skip React Grab / 1code Inspector noise
-      if (message.startsWith("[React Grab]") || message.startsWith("[1code Inspector]") || message.startsWith("%cReact Grab")) return
-      window.webContents.send("preview:console-log", { level, message, line, sourceId })
-    })
-  }
   window.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription) => {
