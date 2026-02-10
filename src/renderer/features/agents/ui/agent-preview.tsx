@@ -183,6 +183,12 @@ export function AgentPreview({
   const lastInspectorClipboardRef = useRef<string>("")
   const [previewLogs, setPreviewLogs] = useState<PreviewLogEntry[]>([])
 
+  // Inspector should start disabled per chat/session context.
+  useEffect(() => {
+    setInspectorEnabled(false)
+    lastInspectorClipboardRef.current = ""
+  }, [chatId])
+
   const pushPreviewLog = useCallback(
     (level: PreviewLogLevel, source: string, ...args: unknown[]) => {
       const message = args.map(serializeLogValue).join(" ").trim()
@@ -750,6 +756,7 @@ export function AgentPreview({
       (() => {
         try {
           const enabled = ${inspectorEnabled ? "true" : "false"};
+          window.__1codeInspectorEnabled = enabled;
           const PREFIX = "__1CODE_INSPECTOR_SELECTED__::";
           const STABLE_STYLE_ID = "__1CODE_INSPECTOR_STABLE_VIEWPORT__";
 
@@ -800,7 +807,7 @@ export function AgentPreview({
           const setup = (api) => {
             if (!api) return false;
             window.reactGrabApi = api;
-            if (typeof api.registerPlugin === "function") {
+            if (!window.__1codeInspectorPluginRegistered && typeof api.registerPlugin === "function") {
               api.registerPlugin({
                 name: "1code-webview",
                 hooks: {
@@ -821,11 +828,13 @@ export function AgentPreview({
                   }
                 }
               });
+              window.__1codeInspectorPluginRegistered = true;
             }
 
-            applyViewportStability(enabled);
-            if (enabled && typeof api.activate === "function") api.activate();
-            if (!enabled && typeof api.deactivate === "function") api.deactivate();
+            const isEnabled = Boolean(window.__1codeInspectorEnabled);
+            applyViewportStability(isEnabled);
+            if (isEnabled && typeof api.activate === "function") api.activate();
+            if (!isEnabled && typeof api.deactivate === "function") api.deactivate();
             return true;
           };
 
@@ -845,6 +854,11 @@ export function AgentPreview({
             }
             return false;
           };
+
+          // If API is already present, enforce latest desired state immediately.
+          if (window.reactGrabApi && typeof window.reactGrabApi.deactivate === "function" && !enabled) {
+            try { window.reactGrabApi.deactivate(); } catch {}
+          }
 
           if (initIfAvailable()) return true;
 
