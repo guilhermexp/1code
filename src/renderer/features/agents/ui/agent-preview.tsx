@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, createElement } from "react"
 import { useAtom } from "jotai"
 import { Button } from "../../../components/ui/button"
-import { RotateCw, RefreshCcwDot, Target, ChevronLeft, ChevronRight, Copy, Trash2, ListChecks, Code } from "lucide-react"
+import { RotateCw, RefreshCcwDot, MousePointer2, ChevronLeft, ChevronRight, Copy, Trash2, ListChecks, Code } from "lucide-react"
 import {
   ExternalLinkIcon,
   IconDoubleChevronRight,
@@ -118,7 +118,9 @@ function shouldIgnorePreviewLog(message: string): boolean {
 
   if (
     normalized.includes("electron security warning (insecure content-security-policy)") ||
-    normalized.includes("[vue warn]: extraneous non-emits event listeners (videoclick)")
+    normalized.includes("[vue warn]: extraneous non-emits event listeners (videoclick)") ||
+    normalized.includes("[react-grab]") ||
+    normalized.includes("react-grab@latest/dist/index.global.js")
   ) {
     return true
   }
@@ -620,7 +622,15 @@ export function AgentPreview({
   }, [webviewEl, webviewDomReady, isRefreshing, pushPreviewLog])
 
   const handleInspectorToggle = useCallback(() => {
-    setInspectorEnabled((prev) => !prev)
+    setInspectorEnabled((prev) => {
+      const next = !prev
+      if (next) {
+        toast.message("Inspector enabled")
+      } else {
+        toast.message("Inspector disabled")
+      }
+      return next
+    })
   }, [])
 
   const handleOpenPreviewDevTools = useCallback(() => {
@@ -741,6 +751,43 @@ export function AgentPreview({
         try {
           const enabled = ${inspectorEnabled ? "true" : "false"};
           const PREFIX = "__1CODE_INSPECTOR_SELECTED__::";
+          const STABLE_STYLE_ID = "__1CODE_INSPECTOR_STABLE_VIEWPORT__";
+
+          const applyViewportStability = (on) => {
+            const existing = document.getElementById(STABLE_STYLE_ID);
+            if (!on) {
+              if (existing) existing.remove();
+              return;
+            }
+
+            const viewportWidth = Math.max(
+              window.innerWidth || 0,
+              document.documentElement?.clientWidth || 0
+            );
+
+            // Only lock for desktop-ish widths where breakpoint flapping is observed.
+            if (viewportWidth < 900) {
+              if (existing) existing.remove();
+              return;
+            }
+
+            const css = [
+              "html { scrollbar-gutter: stable both-edges !important; }",
+              "html, body { min-width: " + viewportWidth + "px !important; }",
+            ].join("\\n");
+
+            if (existing) {
+              existing.textContent = css;
+              return;
+            }
+
+            const style = document.createElement("style");
+            style.id = STABLE_STYLE_ID;
+            style.textContent = css;
+            (document.head || document.documentElement).appendChild(style);
+          };
+
+          applyViewportStability(enabled);
 
           const emitSelection = (content) => {
             try {
@@ -776,6 +823,7 @@ export function AgentPreview({
               });
             }
 
+            applyViewportStability(enabled);
             if (enabled && typeof api.activate === "function") api.activate();
             if (!enabled && typeof api.deactivate === "function") api.deactivate();
             return true;
@@ -982,12 +1030,16 @@ export function AgentPreview({
               variant="ghost"
               size="icon"
               onClick={handleInspectorToggle}
+              aria-pressed={inspectorEnabled}
               className={cn(
-                "h-7 w-7 flex-shrink-0 rounded-md",
-                inspectorEnabled && "bg-accent text-accent-foreground"
+                "h-7 w-7 flex-shrink-0 rounded-md transition-[background-color,color] duration-150",
+                inspectorEnabled
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               )}
+              title={inspectorEnabled ? "Disable Inspector" : "Enable Inspector"}
             >
-              <Target className="h-4 w-4" />
+              <MousePointer2 className="h-4 w-4" />
             </Button>
 
             <Button
@@ -1172,9 +1224,12 @@ export function AgentPreview({
               variant="ghost"
               size="icon"
               onClick={handleInspectorToggle}
+              aria-pressed={inspectorEnabled}
               className={cn(
-                "h-7 w-7 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md",
-                inspectorEnabled && "bg-accent text-accent-foreground"
+                "h-7 w-7 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] rounded-md",
+                inspectorEnabled
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               )}
               title={
                 inspectorEnabled
@@ -1182,7 +1237,7 @@ export function AgentPreview({
                   : "Enable Inspector"
               }
             >
-              <Target className="h-3.5 w-3.5" />
+              <MousePointer2 className="h-3.5 w-3.5" />
             </Button>
 
             <Button
