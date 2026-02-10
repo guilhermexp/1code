@@ -478,8 +478,6 @@ export function AgentPreview({
         const url = new URL(urlString)
         const nextPath = `${url.pathname || "/"}${url.search}${url.hash}` || "/"
         setCurrentPath(nextPath)
-        setLoadedPath(nextPath)
-        setPersistedPath(nextPath)
       } catch {
         // Ignore invalid URLs emitted during provisional navigation
       }
@@ -567,7 +565,6 @@ export function AgentPreview({
     webviewEl,
     webviewDomReady,
     cacheBuster,
-    setPersistedPath,
     pushPreviewLog,
     updateWebviewNavState,
   ])
