@@ -696,17 +696,22 @@ export function AgentPreview({
               const removeReactGrabDomArtifacts = () => {
                 try {
                   const toRemove = [];
-                  const all = document.querySelectorAll("*");
-                  for (const node of all) {
-                    if (!(node instanceof HTMLElement)) continue;
-                    const attrs = node.getAttributeNames();
-                    const hasReactGrabAttr = attrs.some((attr) => attr.startsWith("data-react-grab-"));
-                    const className = typeof node.className === "string" ? node.className : "";
-                    const hasReactGrabClass = className.toLowerCase().includes("react-grab");
-                    if (hasReactGrabAttr || hasReactGrabClass) {
-                      toRemove.push(node);
+                  const scan = (root) => {
+                    const nodes = root.querySelectorAll("*");
+                    for (const node of nodes) {
+                      if (!(node instanceof HTMLElement)) continue;
+                      const attrs = node.getAttributeNames();
+                      const hasReactGrabAttr = attrs.some((attr) => attr.startsWith("data-react-grab-"));
+                      const className = typeof node.className === "string" ? node.className : "";
+                      const hasReactGrabClass = className.toLowerCase().includes("react-grab");
+                      if (hasReactGrabAttr || hasReactGrabClass) {
+                        toRemove.push(node);
+                      }
+                      const shadow = node.shadowRoot;
+                      if (shadow) scan(shadow);
                     }
-                  }
+                  };
+                  scan(document);
                   for (const node of toRemove) {
                     try { node.remove(); } catch {}
                   }
@@ -719,8 +724,8 @@ export function AgentPreview({
                   return;
                 }
                 const css = [
-                  ".react-grab-toolbar, [class*='react-grab-toolbar'], [data-react-grab-toolbar='true'] { display: none !important; pointer-events: none !important; }",
-                  "[data-react-grab-overlay='true'] { display: none !important; pointer-events: none !important; }",
+                  ".react-grab-toolbar, [class*='react-grab-toolbar'] { display: none !important; pointer-events: none !important; }",
+                  "[data-react-grab-toolbar], [data-react-grab-toolbar-toggle], [data-react-grab-toolbar-collapse], [data-react-grab-toolbar-enabled], [data-react-grab-overlay], [data-react-grab-overlay-canvas], [data-react-grab-context-menu], [data-react-grab-selection-label], [data-react-grab-cursor] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; }",
                 ].join("\\n");
                 if (existing) {
                   existing.textContent = css;
@@ -785,17 +790,13 @@ export function AgentPreview({
   const handleInspectorToggle = useCallback(() => {
     setInspectorEnabled((prev) => {
       const next = !prev
-      if (!webviewEl || !webviewDomReady) {
-        pushPreviewLog("warn", "inspector", "toggle-queued-until-ready")
-      }
-      pushPreviewLog("info", "inspector", next ? "toggle-on-requested" : "toggle-off-requested")
       syncInspectorQuickState(next)
       if (!next) {
         toast.message("Inspector disabled")
       }
       return next
     })
-  }, [pushPreviewLog, syncInspectorQuickState, webviewDomReady, webviewEl])
+  }, [syncInspectorQuickState])
 
   const handleOpenPreviewDevTools = useCallback(() => {
     if (!webviewEl || !webviewDomReady) {
@@ -921,17 +922,22 @@ export function AgentPreview({
           const removeReactGrabDomArtifacts = () => {
             try {
               const toRemove = [];
-              const all = document.querySelectorAll("*");
-              for (const node of all) {
-                if (!(node instanceof HTMLElement)) continue;
-                const attrs = node.getAttributeNames();
-                const hasReactGrabAttr = attrs.some((attr) => attr.startsWith("data-react-grab-"));
-                const className = typeof node.className === "string" ? node.className : "";
-                const hasReactGrabClass = className.toLowerCase().includes("react-grab");
-                if (hasReactGrabAttr || hasReactGrabClass) {
-                  toRemove.push(node);
+              const scan = (root) => {
+                const nodes = root.querySelectorAll("*");
+                for (const node of nodes) {
+                  if (!(node instanceof HTMLElement)) continue;
+                  const attrs = node.getAttributeNames();
+                  const hasReactGrabAttr = attrs.some((attr) => attr.startsWith("data-react-grab-"));
+                  const className = typeof node.className === "string" ? node.className : "";
+                  const hasReactGrabClass = className.toLowerCase().includes("react-grab");
+                  if (hasReactGrabAttr || hasReactGrabClass) {
+                    toRemove.push(node);
+                  }
+                  const shadow = node.shadowRoot;
+                  if (shadow) scan(shadow);
                 }
-              }
+              };
+              scan(document);
               for (const node of toRemove) {
                 try { node.remove(); } catch {}
               }
@@ -945,8 +951,8 @@ export function AgentPreview({
               return;
             }
             const css = [
-              ".react-grab-toolbar, [class*='react-grab-toolbar'], [data-react-grab-toolbar='true'] { display: none !important; pointer-events: none !important; }",
-              "[data-react-grab-overlay='true'] { display: none !important; pointer-events: none !important; }",
+              ".react-grab-toolbar, [class*='react-grab-toolbar'] { display: none !important; pointer-events: none !important; }",
+              "[data-react-grab-toolbar], [data-react-grab-toolbar-toggle], [data-react-grab-toolbar-collapse], [data-react-grab-toolbar-enabled], [data-react-grab-overlay], [data-react-grab-overlay-canvas], [data-react-grab-context-menu], [data-react-grab-selection-label], [data-react-grab-cursor] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; }",
             ].join("\\n");
             if (existing) {
               existing.textContent = css;
@@ -1235,20 +1241,12 @@ export function AgentPreview({
     `
 
     executeInWebview(script, true)
-        .then((result) => {
+      .then((result) => {
         const active = Boolean(result && typeof result === "object" ? (result as any).active : result)
         const reason =
           result && typeof result === "object" && "reason" in (result as any)
             ? String((result as any).reason)
             : ""
-        if (inspectorEnabled || reason !== "disabled") {
-          pushPreviewLog(
-            active ? "info" : "warn",
-            "inspector",
-            "activation-result",
-            reason || (active ? "active" : "inactive"),
-          )
-        }
         if (active && inspectorEnabled) {
           const isMac = window.desktopApi.platform === "darwin"
           const shortcut = isMac ? "⌘C" : "Ctrl+C"
@@ -1256,7 +1254,6 @@ export function AgentPreview({
             description: `Hover over any element and press ${shortcut} to select it`,
           })
         } else if (!active && inspectorEnabled) {
-          pushPreviewLog("warn", "inspector", "activation-incomplete", reason || "unknown")
           toast.error("Inspector Mode Failed", {
             description: `Inspector did not activate (${reason || "unknown"}).`,
           })
