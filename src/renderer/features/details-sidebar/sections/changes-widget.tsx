@@ -242,9 +242,15 @@ export const ChangesWidget = memo(function ChangesWidget({
 
   // Handle commit
   const handleCommit = useCallback(() => {
-    const selectedPaths = displayFiles
+    const selectedPaths = Array.from(
+      new Set(
+        displayFiles
       .filter((f) => selectedForCommit.has(getDisplayPath(f)))
       .map((f) => getDisplayPath(f))
+          .map((path) => (path ?? "").trim())
+          .filter((path) => path.length > 0),
+      ),
+    )
     if (shouldCommitAndPush && onCommitAndPush) {
       onCommitAndPush(selectedPaths)
     } else {

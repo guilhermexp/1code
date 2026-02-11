@@ -3,7 +3,7 @@ import simpleGit from "simple-git";
 import { z } from "zod";
 import { publicProcedure, router } from "../trpc";
 import { isUpstreamMissingError } from "./git-utils";
-import { assertRegisteredWorktree } from "./security";
+import { assertRegisteredWorktree, assertValidGitPath } from "./security";
 import { fetchGitHubPRStatus } from "./github";
 import { gitCache } from "./cache";
 import {
@@ -192,6 +192,13 @@ export const createGitOperationsRouter = () => {
 			.mutation(
 				async ({ input }): Promise<{ success: boolean; hash: string }> => {
 					assertRegisteredWorktree(input.worktreePath);
+					const sanitizedPaths = Array.from(
+						new Set(
+							input.filePaths
+								.map((filePath) => filePath.trim())
+								.filter((filePath) => filePath.length > 0),
+						),
+					);
 
 					// Validate message
 					if (!input.message.trim()) {
@@ -199,8 +206,11 @@ export const createGitOperationsRouter = () => {
 					}
 
 					// Validate files
-					if (input.filePaths.length === 0) {
+					if (sanitizedPaths.length === 0) {
 						throw new Error("No files selected for commit");
+					}
+					for (const filePath of sanitizedPaths) {
+						assertValidGitPath(filePath);
 					}
 
 					return withGitLock(input.worktreePath, async () => {
@@ -213,7 +223,7 @@ export const createGitOperationsRouter = () => {
 
 						// Stage only the selected files
 						await withLockRetry(input.worktreePath, () =>
-							git.add(["--", ...input.filePaths])
+							git.add(["--", ...sanitizedPaths])
 						);
 
 						// Verify files were staged

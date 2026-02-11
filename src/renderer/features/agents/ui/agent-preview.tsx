@@ -219,10 +219,17 @@ export function AgentPreview({
   const executeInWebview = useCallback(
     (script: string, userGesture = true) => {
       if (!webviewEl || !webviewDomReady) return Promise.resolve<unknown>(null)
+      if (!webviewEl.isConnected) return Promise.resolve<unknown>(null)
       try {
         return webviewEl.executeJavaScript(script, userGesture)
       } catch (error) {
-        pushPreviewLog("error", "webview", "execute-js-sync-failed", error)
+        const message = error instanceof Error ? error.message : String(error)
+        const expectedNotReady =
+          message.includes("must be attached to the DOM") ||
+          message.includes("dom-ready event emitted before this method can be called")
+        if (!expectedNotReady) {
+          pushPreviewLog("error", "webview", "execute-js-sync-failed", message)
+        }
         return Promise.resolve<unknown>(null)
       }
     },
@@ -685,9 +692,71 @@ export function AgentPreview({
       executeInWebview(
           `(() => {
             try {
+              const FORCE_OFF_STYLE_ID = "__1CODE_INSPECTOR_FORCE_OFF__";
+              const removeReactGrabDomArtifacts = () => {
+                try {
+                  const toRemove = [];
+                  const all = document.querySelectorAll("*");
+                  for (const node of all) {
+                    if (!(node instanceof HTMLElement)) continue;
+                    const attrs = node.getAttributeNames();
+                    const hasReactGrabAttr = attrs.some((attr) => attr.startsWith("data-react-grab-"));
+                    const className = typeof node.className === "string" ? node.className : "";
+                    const hasReactGrabClass = className.toLowerCase().includes("react-grab");
+                    if (hasReactGrabAttr || hasReactGrabClass) {
+                      toRemove.push(node);
+                    }
+                  }
+                  for (const node of toRemove) {
+                    try { node.remove(); } catch {}
+                  }
+                } catch {}
+              };
+              const applyForceOffStyle = (on) => {
+                const existing = document.getElementById(FORCE_OFF_STYLE_ID);
+                if (!on) {
+                  if (existing) existing.remove();
+                  return;
+                }
+                const css = [
+                  ".react-grab-toolbar, [class*='react-grab-toolbar'], [data-react-grab-toolbar='true'] { display: none !important; pointer-events: none !important; }",
+                  "[data-react-grab-overlay='true'] { display: none !important; pointer-events: none !important; }",
+                ].join("\\n");
+                if (existing) {
+                  existing.textContent = css;
+                  return;
+                }
+                const style = document.createElement("style");
+                style.id = FORCE_OFF_STYLE_ID;
+                style.textContent = css;
+                (document.head || document.documentElement).appendChild(style);
+              };
+
               window.__1codeInspectorEnabled = ${enabled ? "true" : "false"};
               const api = window.reactGrabApi || window.__REACT_GRAB__;
               if (api) {
+                if (typeof api.setEnabled === "function") {
+                  try { api.setEnabled(${enabled ? "true" : "false"}); } catch {}
+                }
+                if (typeof api.setToolbarState === "function") {
+                  try {
+                    api.setToolbarState({
+                      enabled: ${enabled ? "true" : "false"},
+                      collapsed: ${enabled ? "false" : "true"},
+                    });
+                  } catch {}
+                }
+                if (typeof api.setOptions === "function") {
+                  try {
+                    api.setOptions({
+                      theme: {
+                        toolbar: {
+                          enabled: ${enabled ? "true" : "false"},
+                        },
+                      },
+                    });
+                  } catch {}
+                }
                 const methods = ${enabled
                   ? '["activate","enable","start","open"]'
                   : '["deactivate","disable","stop","close"]'};
@@ -697,6 +766,10 @@ export function AgentPreview({
                   }
                 }
               }
+              if (!${enabled ? "true" : "false"}) {
+                removeReactGrabDomArtifacts();
+              }
+              applyForceOffStyle(${enabled ? "false" : "true"});
               return true;
             } catch {
               return false;
@@ -843,41 +916,26 @@ export function AgentPreview({
           const enabled = ${inspectorEnabled ? "true" : "false"};
           window.__1codeInspectorEnabled = enabled;
           const PREFIX = "__1CODE_INSPECTOR_SELECTED__::";
-          const STABLE_STYLE_ID = "__1CODE_INSPECTOR_STABLE_VIEWPORT__";
           const FORCE_OFF_STYLE_ID = "__1CODE_INSPECTOR_FORCE_OFF__";
-
-          const applyViewportStability = (on) => {
-            const existing = document.getElementById(STABLE_STYLE_ID);
-            if (!on) {
-              if (existing) existing.remove();
-              return;
-            }
-
-            const viewportWidth = Math.max(
-              window.innerWidth || 0,
-              document.documentElement?.clientWidth || 0
-            );
-
-            // Only lock for desktop-ish widths where breakpoint flapping is observed.
-            if (viewportWidth < 900) {
-              if (existing) existing.remove();
-              return;
-            }
-
-            const css = [
-              "html { scrollbar-gutter: stable both-edges !important; }",
-              "html, body { min-width: " + viewportWidth + "px !important; }",
-            ].join("\\n");
-
-            if (existing) {
-              existing.textContent = css;
-              return;
-            }
-
-            const style = document.createElement("style");
-            style.id = STABLE_STYLE_ID;
-            style.textContent = css;
-            (document.head || document.documentElement).appendChild(style);
+          const LAYOUT_LOCK_STYLE_ID = "__1CODE_INSPECTOR_LAYOUT_LOCK__";
+          const removeReactGrabDomArtifacts = () => {
+            try {
+              const toRemove = [];
+              const all = document.querySelectorAll("*");
+              for (const node of all) {
+                if (!(node instanceof HTMLElement)) continue;
+                const attrs = node.getAttributeNames();
+                const hasReactGrabAttr = attrs.some((attr) => attr.startsWith("data-react-grab-"));
+                const className = typeof node.className === "string" ? node.className : "";
+                const hasReactGrabClass = className.toLowerCase().includes("react-grab");
+                if (hasReactGrabAttr || hasReactGrabClass) {
+                  toRemove.push(node);
+                }
+              }
+              for (const node of toRemove) {
+                try { node.remove(); } catch {}
+              }
+            } catch {}
           };
 
           const applyForceOffStyle = (on) => {
@@ -900,7 +958,34 @@ export function AgentPreview({
             (document.head || document.documentElement).appendChild(style);
           };
 
-          applyViewportStability(enabled);
+          const applyLayoutLock = (on) => {
+            const existing = document.getElementById(LAYOUT_LOCK_STYLE_ID);
+            if (!on) {
+              if (existing) existing.remove();
+              return;
+            }
+
+            const viewportWidth = Math.max(
+              window.innerWidth || 0,
+              document.documentElement?.clientWidth || 0
+            );
+            if (!viewportWidth) return;
+
+            const css = [
+              "html, body { min-width: " + viewportWidth + "px !important; }",
+              "body { overflow-x: hidden !important; }",
+            ].join("\\n");
+
+            if (existing) {
+              existing.textContent = css;
+              return;
+            }
+
+            const style = document.createElement("style");
+            style.id = LAYOUT_LOCK_STYLE_ID;
+            style.textContent = css;
+            (document.head || document.documentElement).appendChild(style);
+          };
 
           const emitSelection = (content) => {
             try {
@@ -915,9 +1000,37 @@ export function AgentPreview({
             return methods.some((method) => typeof obj[method] === "function");
           };
 
-          const setup = (api) => {
+            const setup = (api) => {
             if (!api) return { ready: false, active: false };
             window.reactGrabApi = api;
+
+            const setApiEnabled = (targetApi, on) => {
+              if (!targetApi || typeof targetApi.setEnabled !== "function") return;
+              try { targetApi.setEnabled(Boolean(on)); } catch {}
+            };
+
+            const setToolbarEnabled = (targetApi, on) => {
+              if (!targetApi || typeof targetApi.setOptions !== "function") return;
+              try {
+                targetApi.setOptions({
+                  theme: {
+                    toolbar: {
+                      enabled: Boolean(on),
+                    },
+                  },
+                });
+              } catch {}
+            };
+
+            const setToolbarState = (targetApi, on) => {
+              if (!targetApi || typeof targetApi.setToolbarState !== "function") return;
+              try {
+                targetApi.setToolbarState({
+                  enabled: Boolean(on),
+                  collapsed: !on,
+                });
+              } catch {}
+            };
 
             const applyApiEnabledState = (targetApi, on) => {
               if (!targetApi) return;
@@ -925,6 +1038,9 @@ export function AgentPreview({
               const disableMethods = ["deactivate", "disable", "stop", "close"];
               const methods = on ? enableMethods : disableMethods;
               let invoked = false;
+              setApiEnabled(targetApi, on);
+              setToolbarEnabled(targetApi, on);
+              setToolbarState(targetApi, on);
               for (const method of methods) {
                 if (typeof targetApi[method] === "function") {
                   try {
@@ -961,7 +1077,6 @@ export function AgentPreview({
             }
 
             const isEnabled = Boolean(window.__1codeInspectorEnabled);
-            applyViewportStability(isEnabled);
             const invoked = applyApiEnabledState(api, isEnabled);
             return {
               ready: true,
@@ -985,6 +1100,28 @@ export function AgentPreview({
           const forceDeactivate = () => {
             const api = getCurrentApi();
             if (api) {
+              if (typeof api.setEnabled === "function") {
+                try { api.setEnabled(false); } catch {}
+              }
+              if (typeof api.setOptions === "function") {
+                try {
+                  api.setOptions({
+                    theme: {
+                      toolbar: {
+                        enabled: false,
+                      },
+                    },
+                  });
+                } catch {}
+              }
+              if (typeof api.setToolbarState === "function") {
+                try {
+                  api.setToolbarState({
+                    enabled: false,
+                    collapsed: true,
+                  });
+                } catch {}
+              }
               const methods = ["deactivate", "disable", "stop", "close"];
               for (const method of methods) {
                 if (typeof api[method] === "function") {
@@ -992,8 +1129,9 @@ export function AgentPreview({
                 }
               }
             }
-            applyViewportStability(false);
+            removeReactGrabDomArtifacts();
             applyForceOffStyle(true);
+            applyLayoutLock(false);
           };
 
           // Disabled mode is strict opt-out: do not load/init React Grab automatically.
@@ -1004,6 +1142,7 @@ export function AgentPreview({
 
           // Enabled: remove hard-off style and continue with init/load path.
           applyForceOffStyle(false);
+          applyLayoutLock(true);
 
           const initIfAvailable = () => {
             const existingApi = getCurrentApi();

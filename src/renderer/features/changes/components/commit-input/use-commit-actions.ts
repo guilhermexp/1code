@@ -55,16 +55,24 @@ export function useCommitActions({
 				return false;
 			}
 
+			const sanitizedPaths = Array.from(
+				new Set(
+					(filePaths ?? [])
+						.map((path) => path.trim())
+						.filter((path) => path.length > 0),
+				),
+			);
+
 			let commitMessage = message?.trim() ?? "";
 			console.log("[CommitActions] commit called, commitMessage:", commitMessage, "chatId:", chatId);
 
 			if (!commitMessage && chatId) {
-				console.log("[CommitActions] No message, generating with AI for files:", filePaths);
+				console.log("[CommitActions] No message, generating with AI for files:", sanitizedPaths);
 				setIsGenerating(true);
 				try {
 					const result = await generateCommitMutation.mutateAsync({
 						chatId,
-						filePaths,
+						filePaths: sanitizedPaths,
 						ollamaModel: selectedOllamaModel,
 					});
 					console.log("[CommitActions] AI generated message:", result.message);
@@ -85,10 +93,10 @@ export function useCommitActions({
 			}
 
 			try {
-				if (filePaths && filePaths.length > 0) {
+				if (sanitizedPaths.length > 0) {
 					await atomicCommitMutation.mutateAsync({
 						worktreePath,
-						filePaths,
+						filePaths: sanitizedPaths,
 						message: commitMessage,
 					});
 				} else {
