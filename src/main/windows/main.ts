@@ -597,6 +597,8 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
     }
   })
 
+  const cspDebugLogsEnabled = process.env.CSP_DEBUG === "true"
+
   ses.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = { ...details.responseHeaders }
 
@@ -604,7 +606,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
     const isLocalhost = details.url.includes('localhost') || details.url.includes('127.0.0.1')
 
     // Debug logging for localhost URLs to help diagnose iframe blocking issues
-    if (isLocalhost) {
+    if (isLocalhost && cspDebugLogsEnabled) {
       console.log(`[CSP Debug] Headers for ${details.url}:`, Object.keys(responseHeaders))
     }
 
@@ -615,12 +617,16 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
         // Remove X-Frame-Options regardless of capitalization
         if (lowerKey === 'x-frame-options') {
           delete responseHeaders[key]
-          console.log(`[CSP] Removed ${key} header for localhost`)
+          if (cspDebugLogsEnabled) {
+            console.log(`[CSP] Removed ${key} header for localhost`)
+          }
         }
         // Also remove Content-Security-Policy-Report-Only which can contain frame-ancestors
         if (lowerKey === 'content-security-policy-report-only') {
           delete responseHeaders[key]
-          console.log(`[CSP] Removed ${key} header for localhost`)
+          if (cspDebugLogsEnabled) {
+            console.log(`[CSP] Removed ${key} header for localhost`)
+          }
         }
       }
     }
@@ -639,10 +645,14 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
     if (isLocalhost) {
       // Replace any existing CSP with permissive one for localhost
       if (cspHeaderKey) {
-        console.log(`[CSP] Replacing restrictive CSP for localhost ${details.url}`)
+        if (cspDebugLogsEnabled) {
+          console.log(`[CSP] Replacing restrictive CSP for localhost ${details.url}`)
+        }
         responseHeaders[cspHeaderKey] = [PERMISSIVE_CSP]
       } else {
-        console.log(`[CSP] No CSP found for localhost ${details.url}, injecting permissive CSP`)
+        if (cspDebugLogsEnabled) {
+          console.log(`[CSP] No CSP found for localhost ${details.url}, injecting permissive CSP`)
+        }
         responseHeaders["Content-Security-Policy"] = [PERMISSIVE_CSP]
       }
     } else if (cspHeaderKey && responseHeaders[cspHeaderKey]) {

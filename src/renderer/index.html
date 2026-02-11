@@ -73,9 +73,22 @@
     </div>
     <script>
       console.log("[HTML] Inline script running - scripts work!");
+      function shouldIgnoreGlobalError(msg) {
+        var text = String(msg || "").toLowerCase();
+        return (
+          text.includes("resizeobserver loop") ||
+          text.includes("err_aborted") ||
+          text.includes("guest_view_manager_call") ||
+          text.includes("unexpected error while loading url")
+        );
+      }
+
       window.onerror = function(msg, url, line) {
+        if (shouldIgnoreGlobalError(msg)) {
+          return true;
+        }
         console.error("[HTML] Global error:", msg, "at", url, "line", line);
-        document.getElementById("root").innerHTML = "<pre style='color:red;padding:20px'>Error: " + msg + "</pre>";
+        return false;
       };
     </script>
     <script type="module" src="./main.tsx"></script>

@@ -20,7 +20,7 @@ const SETUP_CODE = `// Add this to your app's entry point (e.g., main.tsx or App
 if (typeof window !== 'undefined') {
   // Load React Grab dynamically
   const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/umd/index.min.js';
+  script.src = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/index.global.js';
   script.async = true;
 
   script.onload = () => {

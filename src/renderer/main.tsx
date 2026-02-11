@@ -21,10 +21,17 @@ preloadDiffHighlighter()
 // that can occur when layout changes trigger observation callbacks
 // Common with virtualization libraries and diff viewers
 const resizeObserverErr = /ResizeObserver loop/
+const expectedWebviewAbortErr =
+  /(GUEST_VIEW_MANAGER_CALL|ERR_ABORTED|Unexpected error while loading URL)/i
 
 // Handle both error event and unhandledrejection
 window.addEventListener("error", (e) => {
   if (e.message && resizeObserverErr.test(e.message)) {
+    e.stopImmediatePropagation()
+    e.preventDefault()
+    return false
+  }
+  if (e.message && expectedWebviewAbortErr.test(e.message)) {
     e.stopImmediatePropagation()
     e.preventDefault()
     return false
@@ -36,6 +43,9 @@ const originalOnError = window.onerror
 window.onerror = (message, source, lineno, colno, error) => {
   if (typeof message === "string" && resizeObserverErr.test(message)) {
     return true // Suppress the error
+  }
+  if (typeof message === "string" && expectedWebviewAbortErr.test(message)) {
+    return true // Expected navigation cancellation in Electron webview
   }
   if (originalOnError) {
     return originalOnError(message, source, lineno, colno, error)

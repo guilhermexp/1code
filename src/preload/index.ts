@@ -23,6 +23,18 @@ if (process.env.FORCE_ANALYTICS === "true") {
 }
 
 // Expose desktop-specific APIs
+const invokeUpdateIpc = async <T>(channel: string, fallback: T, ...args: unknown[]): Promise<T> => {
+  try {
+    return (await ipcRenderer.invoke(channel, ...args)) as T
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes(`No handler registered for '${channel}'`)) {
+      return fallback
+    }
+    throw error
+  }
+}
+
 contextBridge.exposeInMainWorld("desktopApi", {
   // Platform info
   platform: process.platform,
@@ -31,11 +43,11 @@ contextBridge.exposeInMainWorld("desktopApi", {
   isPackaged: () => ipcRenderer.invoke("app:isPackaged"),
 
   // Auto-update methods
-  checkForUpdates: (force?: boolean) => ipcRenderer.invoke("update:check", force),
-  downloadUpdate: () => ipcRenderer.invoke("update:download"),
-  installUpdate: () => ipcRenderer.invoke("update:install"),
-  setUpdateChannel: (channel: "latest" | "beta") => ipcRenderer.invoke("update:set-channel", channel),
-  getUpdateChannel: () => ipcRenderer.invoke("update:get-channel") as Promise<"latest" | "beta">,
+  checkForUpdates: (force?: boolean) => invokeUpdateIpc("update:check", null, force),
+  downloadUpdate: () => invokeUpdateIpc("update:download", false),
+  installUpdate: () => invokeUpdateIpc("update:install", undefined),
+  setUpdateChannel: (channel: "latest" | "beta") => invokeUpdateIpc("update:set-channel", false, channel),
+  getUpdateChannel: () => invokeUpdateIpc<"latest" | "beta">("update:get-channel", "latest"),
 
   // Auto-update event listeners
   onUpdateChecking: (callback: () => void) => {

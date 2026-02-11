@@ -118,9 +118,7 @@ function shouldIgnorePreviewLog(message: string): boolean {
 
   if (
     normalized.includes("electron security warning (insecure content-security-policy)") ||
-    normalized.includes("[vue warn]: extraneous non-emits event listeners (videoclick)") ||
-    normalized.includes("[react-grab]") ||
-    normalized.includes("react-grab@latest/dist/index.global.js")
+    normalized.includes("[vue warn]: extraneous non-emits event listeners (videoclick)")
   ) {
     return true
   }
@@ -156,6 +154,7 @@ export function AgentPreview({
   const [cacheBuster, setCacheBuster] = useState<number | null>(null)
   const [editableCustomUrl, setEditableCustomUrl] = useState(customUrl || "")
   const [webviewEl, setWebviewEl] = useState<Electron.WebviewTag | null>(null)
+  const webviewNodeRef = useRef<Electron.WebviewTag | null>(null)
   const [webviewDomReady, setWebviewDomReady] = useState(false)
   const frameRef = useRef<HTMLDivElement>(null)
   const resizeCleanupRef = useRef<(() => void) | null>(null)
@@ -182,6 +181,13 @@ export function AgentPreview({
   const [inspectorEnabled, setInspectorEnabled] = useState(false)
   const lastInspectorClipboardRef = useRef<string>("")
   const [previewLogs, setPreviewLogs] = useState<PreviewLogEntry[]>([])
+
+  const handleWebviewRef = useCallback((node: unknown) => {
+    const next = (node as Electron.WebviewTag | null) ?? null
+    if (next === webviewNodeRef.current) return
+    webviewNodeRef.current = next
+    setWebviewEl(next)
+  }, [])
 
   // Inspector should start disabled per chat/session context.
   useEffect(() => {
@@ -210,6 +216,19 @@ export function AgentPreview({
     setPreviewLogs([])
   }, [])
 
+  const executeInWebview = useCallback(
+    (script: string, userGesture = true) => {
+      if (!webviewEl || !webviewDomReady) return Promise.resolve<unknown>(null)
+      try {
+        return webviewEl.executeJavaScript(script, userGesture)
+      } catch (error) {
+        pushPreviewLog("error", "webview", "execute-js-sync-failed", error)
+        return Promise.resolve<unknown>(null)
+      }
+    },
+    [pushPreviewLog, webviewDomReady, webviewEl],
+  )
+
   const latestPreviewLogs = useMemo(
     () => previewLogs.slice(-80).reverse(),
     [previewLogs],
@@ -222,7 +241,7 @@ export function AgentPreview({
 
   const updateWebviewNavState = useCallback(() => {
     const webview = webviewEl
-    if (!webview || !webviewDomReady) return
+    if (!webview) return
     try {
       setWebviewCanGoBack(webview.canGoBack())
       setWebviewCanGoForward(webview.canGoForward())
@@ -230,7 +249,7 @@ export function AgentPreview({
       setWebviewCanGoBack(false)
       setWebviewCanGoForward(false)
     }
-  }, [webviewEl, webviewDomReady])
+  }, [webviewEl])
 
   useEffect(() => {
     if (!webviewEl) return
@@ -239,6 +258,7 @@ export function AgentPreview({
 
     const handleDomReady = () => {
       setWebviewDomReady(true)
+      pushPreviewLog("info", "webview", "dom-ready")
       updateWebviewNavState()
     }
 
@@ -255,7 +275,7 @@ export function AgentPreview({
       webviewEl.removeEventListener("dom-ready", handleDomReady as EventListener)
       webviewEl.removeEventListener("destroyed", handleDestroyed as EventListener)
     }
-  }, [webviewEl, updateWebviewNavState])
+  }, [pushPreviewLog, webviewEl, updateWebviewNavState])
 
   // Listen for reload events from external header
   useEffect(() => {
@@ -506,6 +526,24 @@ export function AgentPreview({
         updateWebviewNavState()
       }
     }
+    const handleFailLoad = (event: Event) => {
+      const payload = event as {
+        errorCode?: number
+        errorDescription?: string
+        validatedURL?: string
+        isMainFrame?: boolean
+      }
+      if (payload.isMainFrame !== false) {
+        pushPreviewLog(
+          "error",
+          "webview-load",
+          `code=${payload.errorCode ?? "unknown"}`,
+          payload.errorDescription ?? "load-failed",
+          payload.validatedURL ?? "",
+        )
+      }
+      handleStopLoading()
+    }
     const handleNavigate = (event: Event) => {
       const url = (event as { url?: string }).url
       if (url) {
@@ -513,6 +551,18 @@ export function AgentPreview({
       }
       if (webviewDomReady) {
         updateWebviewNavState()
+      }
+      if (!inspectorEnabled && webviewDomReady) {
+        executeInWebview(
+          `(() => {
+            try {
+              window.__1codeInspectorEnabled = false;
+              const api = window.reactGrabApi || window.__REACT_GRAB__;
+              if (api && typeof api.deactivate === "function") api.deactivate();
+            } catch {}
+          })();`,
+          true,
+        ).catch(() => {})
       }
     }
     const handleConsoleMessage = (event: Event) => {
@@ -551,7 +601,7 @@ export function AgentPreview({
 
     webview.addEventListener("did-start-loading", handleStartLoading as EventListener)
     webview.addEventListener("did-stop-loading", handleStopLoading as EventListener)
-    webview.addEventListener("did-fail-load", handleStopLoading as EventListener)
+    webview.addEventListener("did-fail-load", handleFailLoad as EventListener)
     webview.addEventListener("did-navigate", handleNavigate as EventListener)
     webview.addEventListener("did-navigate-in-page", handleNavigate as EventListener)
     webview.addEventListener("console-message", handleConsoleMessage as EventListener)
@@ -563,7 +613,7 @@ export function AgentPreview({
     return () => {
       webview.removeEventListener("did-start-loading", handleStartLoading as EventListener)
       webview.removeEventListener("did-stop-loading", handleStopLoading as EventListener)
-      webview.removeEventListener("did-fail-load", handleStopLoading as EventListener)
+      webview.removeEventListener("did-fail-load", handleFailLoad as EventListener)
       webview.removeEventListener("did-navigate", handleNavigate as EventListener)
       webview.removeEventListener("did-navigate-in-page", handleNavigate as EventListener)
       webview.removeEventListener("console-message", handleConsoleMessage as EventListener)
@@ -573,6 +623,8 @@ export function AgentPreview({
     webviewEl,
     webviewDomReady,
     cacheBuster,
+    inspectorEnabled,
+    executeInWebview,
     pushPreviewLog,
     updateWebviewNavState,
   ])
@@ -627,17 +679,50 @@ export function AgentPreview({
     setTimeout(() => setIsRefreshing(false), 400)
   }, [webviewEl, webviewDomReady, isRefreshing, pushPreviewLog])
 
+  const syncInspectorQuickState = useCallback(
+    (enabled: boolean) => {
+      if (!webviewEl || !webviewDomReady) return
+      executeInWebview(
+          `(() => {
+            try {
+              window.__1codeInspectorEnabled = ${enabled ? "true" : "false"};
+              const api = window.reactGrabApi || window.__REACT_GRAB__;
+              if (api) {
+                const methods = ${enabled
+                  ? '["activate","enable","start","open"]'
+                  : '["deactivate","disable","stop","close"]'};
+                for (const method of methods) {
+                  if (typeof api[method] === "function") {
+                    try { api[method](); } catch {}
+                  }
+                }
+              }
+              return true;
+            } catch {
+              return false;
+            }
+          })();`,
+          true,
+        )
+        .catch(() => {})
+    },
+    [executeInWebview, webviewDomReady, webviewEl],
+  )
+
   const handleInspectorToggle = useCallback(() => {
     setInspectorEnabled((prev) => {
       const next = !prev
-      if (next) {
-        toast.message("Inspector enabled")
-      } else {
+      if (!webviewEl || !webviewDomReady) {
+        pushPreviewLog("warn", "inspector", "toggle-queued-until-ready")
+      }
+      pushPreviewLog("info", "inspector", next ? "toggle-on-requested" : "toggle-off-requested")
+      syncInspectorQuickState(next)
+      if (!next) {
         toast.message("Inspector disabled")
       }
       return next
     })
-  }, [])
+  }, [pushPreviewLog, syncInspectorQuickState, webviewDomReady, webviewEl])
 
   const handleOpenPreviewDevTools = useCallback(() => {
     if (!webviewEl || !webviewDomReady) {
@@ -753,12 +838,13 @@ export function AgentPreview({
     if (!webviewEl || !webviewDomReady) return
 
     const script = `
-      (() => {
+      (async () => {
         try {
           const enabled = ${inspectorEnabled ? "true" : "false"};
           window.__1codeInspectorEnabled = enabled;
           const PREFIX = "__1CODE_INSPECTOR_SELECTED__::";
           const STABLE_STYLE_ID = "__1CODE_INSPECTOR_STABLE_VIEWPORT__";
+          const FORCE_OFF_STYLE_ID = "__1CODE_INSPECTOR_FORCE_OFF__";
 
           const applyViewportStability = (on) => {
             const existing = document.getElementById(STABLE_STYLE_ID);
@@ -794,6 +880,26 @@ export function AgentPreview({
             (document.head || document.documentElement).appendChild(style);
           };
 
+          const applyForceOffStyle = (on) => {
+            const existing = document.getElementById(FORCE_OFF_STYLE_ID);
+            if (!on) {
+              if (existing) existing.remove();
+              return;
+            }
+            const css = [
+              ".react-grab-toolbar, [class*='react-grab-toolbar'], [data-react-grab-toolbar='true'] { display: none !important; pointer-events: none !important; }",
+              "[data-react-grab-overlay='true'] { display: none !important; pointer-events: none !important; }",
+            ].join("\\n");
+            if (existing) {
+              existing.textContent = css;
+              return;
+            }
+            const style = document.createElement("style");
+            style.id = FORCE_OFF_STYLE_ID;
+            style.textContent = css;
+            (document.head || document.documentElement).appendChild(style);
+          };
+
           applyViewportStability(enabled);
 
           const emitSelection = (content) => {
@@ -804,9 +910,32 @@ export function AgentPreview({
             }
           };
 
+          const hasAnyMethod = (obj, methods) => {
+            if (!obj) return false;
+            return methods.some((method) => typeof obj[method] === "function");
+          };
+
           const setup = (api) => {
-            if (!api) return false;
+            if (!api) return { ready: false, active: false };
             window.reactGrabApi = api;
+
+            const applyApiEnabledState = (targetApi, on) => {
+              if (!targetApi) return;
+              const enableMethods = ["activate", "enable", "start", "open"];
+              const disableMethods = ["deactivate", "disable", "stop", "close"];
+              const methods = on ? enableMethods : disableMethods;
+              let invoked = false;
+              for (const method of methods) {
+                if (typeof targetApi[method] === "function") {
+                  try {
+                    targetApi[method]();
+                    invoked = true;
+                  } catch {}
+                }
+              }
+              return invoked;
+            };
+
             if (!window.__1codeInspectorPluginRegistered && typeof api.registerPlugin === "function") {
               api.registerPlugin({
                 name: "1code-webview",
@@ -833,13 +962,52 @@ export function AgentPreview({
 
             const isEnabled = Boolean(window.__1codeInspectorEnabled);
             applyViewportStability(isEnabled);
-            if (isEnabled && typeof api.activate === "function") api.activate();
-            if (!isEnabled && typeof api.deactivate === "function") api.deactivate();
-            return true;
+            const invoked = applyApiEnabledState(api, isEnabled);
+            return {
+              ready: true,
+              active: isEnabled ? invoked : true,
+            };
           };
 
+          const getCurrentApi = () => {
+            const candidates = [window.reactGrabApi, window.__REACT_GRAB__];
+            for (const candidate of candidates) {
+              if (
+                hasAnyMethod(candidate, ["activate", "enable", "start", "open", "deactivate", "disable", "stop", "close"]) ||
+                typeof candidate?.registerPlugin === "function"
+              ) {
+                return candidate;
+              }
+            }
+            return null;
+          };
+
+          const forceDeactivate = () => {
+            const api = getCurrentApi();
+            if (api) {
+              const methods = ["deactivate", "disable", "stop", "close"];
+              for (const method of methods) {
+                if (typeof api[method] === "function") {
+                  try { api[method](); } catch {}
+                }
+              }
+            }
+            applyViewportStability(false);
+            applyForceOffStyle(true);
+          };
+
+          // Disabled mode is strict opt-out: do not load/init React Grab automatically.
+          if (!enabled) {
+            forceDeactivate();
+            return { ok: true, active: false, reason: "disabled" };
+          }
+
+          // Enabled: remove hard-off style and continue with init/load path.
+          applyForceOffStyle(false);
+
           const initIfAvailable = () => {
-            if (window.__REACT_GRAB__) return setup(window.__REACT_GRAB__);
+            const existingApi = getCurrentApi();
+            if (existingApi) return setup(existingApi);
             if (window.ReactGrab && typeof window.ReactGrab.init === "function") {
               const api = window.ReactGrab.init({
                 onElementSelect: (element) => {
@@ -852,18 +1020,16 @@ export function AgentPreview({
               });
               return setup(api);
             }
-            return false;
+            return { ready: false, active: false };
           };
 
-          // If API is already present, enforce latest desired state immediately.
-          if (window.reactGrabApi && typeof window.reactGrabApi.deactivate === "function" && !enabled) {
-            try { window.reactGrabApi.deactivate(); } catch {}
+          const immediate = initIfAvailable();
+          if (immediate.ready) {
+            return { ok: immediate.active, active: immediate.active, reason: immediate.active ? "ready" : "methods-missing" };
           }
 
-          if (initIfAvailable()) return true;
-
           const head = document.head || document.getElementsByTagName("head")[0] || document.documentElement;
-          if (!head) return false;
+          if (!head) return { ok: false, active: false, reason: "no-head" };
 
           if (!document.querySelector('link[href*="react-grab"]')) {
             const css = document.createElement("link");
@@ -872,42 +1038,95 @@ export function AgentPreview({
             head.appendChild(css);
           }
 
-          if (!document.querySelector('script[src*="react-grab"]')) {
-            const scriptTag = document.createElement("script");
-            scriptTag.src = "https://cdn.jsdelivr.net/npm/react-grab@latest/dist/index.global.js";
-            scriptTag.async = true;
-            scriptTag.onload = () => { initIfAvailable(); };
-            head.appendChild(scriptTag);
-          } else {
-            setTimeout(() => { initIfAvailable(); }, 100);
+          const SCRIPT_URLS = [
+            "https://cdn.jsdelivr.net/npm/react-grab@latest/dist/index.global.js",
+            "https://unpkg.com/react-grab@latest/dist/index.global.js",
+          ];
+
+          const removeExistingReactGrabScripts = () => {
+            const existing = Array.from(document.querySelectorAll("script[src*='react-grab']"));
+            for (const node of existing) {
+              try { node.remove(); } catch {}
+            }
+          };
+
+          const loadScript = async () => {
+            // If API already exists, don't inject again.
+            if (window.ReactGrab || window.__REACT_GRAB__ || window.reactGrabApi) {
+              return true;
+            }
+
+            removeExistingReactGrabScripts();
+
+            for (const src of SCRIPT_URLS) {
+              const loaded = await new Promise((resolve) => {
+                const scriptTag = document.createElement("script");
+                scriptTag.src = src;
+                scriptTag.async = true;
+                scriptTag.onload = () => resolve(true);
+                scriptTag.onerror = () => resolve(false);
+                head.appendChild(scriptTag);
+              });
+
+              if (loaded && (window.ReactGrab || window.__REACT_GRAB__)) {
+                return true;
+              }
+            }
+
+            return false;
+          };
+
+          const loaded = await loadScript();
+          if (!loaded) return { ok: false, active: false, reason: "script-load-failed" };
+
+          for (let i = 0; i < 8; i++) {
+            const result = initIfAvailable();
+            if (result.ready) {
+              return { ok: result.active, active: result.active, reason: result.active ? "activated" : "methods-missing" };
+            }
+            await new Promise((resolve) => setTimeout(resolve, 80));
           }
 
-          return true;
+          return { ok: false, active: false, reason: "api-not-ready" };
         } catch (err) {
           console.error("[1code Inspector] webview injection failed", err);
-          return false;
+          return { ok: false, active: false, reason: "exception" };
         }
       })();
     `
 
-    webviewEl.executeJavaScript(script, true)
-      .then((ok) => {
-        if (ok && inspectorEnabled) {
+    executeInWebview(script, true)
+        .then((result) => {
+        const active = Boolean(result && typeof result === "object" ? (result as any).active : result)
+        const reason =
+          result && typeof result === "object" && "reason" in (result as any)
+            ? String((result as any).reason)
+            : ""
+        if (inspectorEnabled || reason !== "disabled") {
+          pushPreviewLog(
+            active ? "info" : "warn",
+            "inspector",
+            "activation-result",
+            reason || (active ? "active" : "inactive"),
+          )
+        }
+        if (active && inspectorEnabled) {
           const isMac = window.desktopApi.platform === "darwin"
           const shortcut = isMac ? "⌘C" : "Ctrl+C"
           toast.success("Inspector Mode Active", {
             description: `Hover over any element and press ${shortcut} to select it`,
           })
-        } else if (!ok && inspectorEnabled) {
+        } else if (!active && inspectorEnabled) {
+          pushPreviewLog("warn", "inspector", "activation-incomplete", reason || "unknown")
           toast.error("Inspector Mode Failed", {
-            description: "Could not activate inspector in Chromium preview.",
+            description: `Inspector did not activate (${reason || "unknown"}).`,
           })
         }
       })
       .catch((error) => {
         pushPreviewLog("error", "inspector", "webview-inject-failed", error)
       })
-  }, [webviewEl, webviewDomReady, inspectorEnabled, pushPreviewLog])
+  }, [executeInWebview, webviewEl, webviewDomReady, inspectorEnabled, pushPreviewLog])
 
   // Inspector Mode: Clipboard fallback (React Grab copies to clipboard on select)
   useEffect(() => {
@@ -1323,9 +1542,7 @@ export function AgentPreview({
             >
               {createElement("webview" as any, {
                 key: reloadKey,
-                ref: (node: any) => {
-                  setWebviewEl(node as Electron.WebviewTag | null)
-                },
+                ref: handleWebviewRef,
                 src: previewUrl,
                 partition: "persist:main",
                 allowpopups: "true",
@@ -1406,9 +1623,7 @@ export function AgentPreview({
               >
                 {createElement("webview" as any, {
                   key: reloadKey,
-                  ref: (node: any) => {
-                    setWebviewEl(node as Electron.WebviewTag | null)
-                  },
+                  ref: handleWebviewRef,
                   src: previewUrl,
                   partition: "persist:main",
                   allowpopups: "true",
