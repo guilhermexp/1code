@@ -1,5 +1,6 @@
 import {
   BrowserWindow,
+  Notification,
   shell,
   nativeTheme,
   ipcMain,
@@ -101,18 +102,26 @@ function registerIpcHandlers(): void {
     "app:show-notification",
     (event, options: { title: string; body: string }) => {
       try {
-        const { Notification } = require("electron")
-        const iconPath = join(__dirname, "../../../build/icon.ico")
-        const icon = existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined
+        if (!Notification.isSupported()) {
+          console.warn("[Main] Notifications not supported on this system")
+          return
+        }
+
+        // On macOS, the app icon is used automatically — no custom icon needed.
+        // On Windows, use .ico; on Linux, use .png.
+        let icon: Electron.NativeImage | undefined
+        if (process.platform !== "darwin") {
+          const ext = process.platform === "win32" ? "icon.ico" : "icon.png"
+          const iconPath = join(__dirname, "../../build", ext)
+          icon = existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined
+        }
 
         const notification = new Notification({
           title: options.title,
           body: options.body,
-          icon,
+          ...(icon && { icon }),
           ...(process.platform === "win32" && { silent: false }),
         })
-
-        notification.show()
 
         notification.on("click", () => {
           const win = getWindowFromEvent(event)
@@ -121,6 +130,8 @@ function registerIpcHandlers(): void {
             win.focus()
           }
         })
+
+        notification.show()
       } catch (error) {
         console.error("[Main] Failed to show notification:", error)
       }
@@ -197,7 +208,7 @@ function registerIpcHandlers(): void {
   })
 
   // New window - optionally open with specific chat/subchat
-  ipcMain.handle("window:new", (_event, options?: { chatId?: string; subChatId?: string }) => {
+  ipcMain.handle("window:new", (_event, options?: { chatId?: string; subChatId?: string; splitPaneIds?: string[] }) => {
     createWindow(options)
   })
 
@@ -543,7 +554,7 @@ function getUseNativeFramePreference(): boolean {
  * @param options.chatId Open this chat in the new window
  * @param options.subChatId Open this sub-chat in the new window
  */
-export function createWindow(options?: { chatId?: string; subChatId?: string }): BrowserWindow {
+export function createWindow(options?: { chatId?: string; subChatId?: string; splitPaneIds?: string[] }): BrowserWindow {
   // Register IPC handlers before creating first window
   registerIpcHandlers()
 
@@ -812,6 +823,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
       params.set("windowId", windowId)
       if (options?.chatId) params.set("chatId", options.chatId)
       if (options?.subChatId) params.set("subChatId", options.subChatId)
+      if (options?.splitPaneIds) params.set("splitPaneIds", JSON.stringify(options.splitPaneIds))
     }
 
     if (devServerUrl) {

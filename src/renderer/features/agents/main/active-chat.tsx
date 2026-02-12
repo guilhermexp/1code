@@ -16,8 +16,8 @@ import {
   IconCloseSidebarRight,
   IconOpenSidebarRight,
   IconSpinner,
-  UnarchiveIcon,
   PauseIcon,
+  UnarchiveIcon,
   VolumeIcon
 } from "../../../components/ui/icons"
 import { Kbd } from "../../../components/ui/kbd"
@@ -33,8 +33,8 @@ import {
 } from "../../../components/ui/tooltip"
 // e2b API routes are used instead of useSandboxManager for agents
 // import { clearSubChatSelectionAtom, isSubChatMultiSelectModeAtom, selectedSubChatIdsAtom } from "@/lib/atoms/agent-subchat-selection"
+import { ResizableBottomPanel } from "@/components/ui/resizable-bottom-panel"
 import { Chat, useChat } from "@ai-sdk/react"
-import type { DiffViewMode } from "../ui/agent-diff-view"
 import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
   ArrowDown,
@@ -57,6 +57,7 @@ import {
   useState
 } from "react"
 import { flushSync } from "react-dom"
+import type { VirtuosoHandle } from "react-virtuoso"
 import { toast } from "sonner"
 import { useShallow } from "zustand/react/shallow"
 import type { FileStatus } from "../../../../shared/changes-types"
@@ -83,10 +84,10 @@ import { cn } from "../../../lib/utils"
 import { isDesktopApp } from "../../../lib/utils/platform"
 import { ChangesPanel } from "../../changes"
 import { useCommitActions } from "../../changes/components/commit-input"
-import { usePushAction } from "../../changes/hooks/use-push-action"
 import { DiffCenterPeekDialog } from "../../changes/components/diff-center-peek-dialog"
 import { DiffFullPageView } from "../../changes/components/diff-full-page-view"
 import { DiffSidebarHeader } from "../../changes/components/diff-sidebar-header"
+import { usePushAction } from "../../changes/hooks/use-push-action"
 import { getStatusIndicator } from "../../changes/utils/status"
 import {
   detailsSidebarOpenAtom,
@@ -95,9 +96,8 @@ import {
 import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
 import { FileViewerSidebar } from "../../file-viewer"
 import { FileSearchDialog } from "../../file-viewer/components/file-search-dialog"
-import { terminalSidebarOpenAtomFamily, terminalDisplayModeAtom, terminalBottomHeightAtom } from "../../terminal/atoms"
-import { TerminalSidebar, TerminalBottomPanelContent } from "../../terminal/terminal-sidebar"
-import { ResizableBottomPanel } from "@/components/ui/resizable-bottom-panel"
+import { terminalBottomHeightAtom, terminalDisplayModeAtom, terminalSidebarOpenAtomFamily } from "../../terminal/atoms"
+import { TerminalBottomPanelContent, TerminalSidebar } from "../../terminal/terminal-sidebar"
 import {
   agentsChangesPanelCollapsedAtom,
   agentsChangesPanelWidthAtom,
@@ -108,16 +108,17 @@ import {
   agentsSubChatsSidebarModeAtom,
   agentsSubChatUnseenChangesAtom,
   agentsUnseenChangesAtom,
+  clearLoading,
+  compactingSubChatsAtom,
+  currentPlanPathAtomFamily,
+  diffActiveTabAtom,
+  diffSidebarOpenAtomFamily,
+  diffViewDisplayModeAtom,
+  expiredUserQuestionsAtom,
   fileSearchDialogOpenAtom,
   fileViewerDisplayModeAtom,
   fileViewerOpenAtomFamily,
   fileViewerSidebarWidthAtom,
-  clearLoading,
-  compactingSubChatsAtom,
-  currentPlanPathAtomFamily,
-  diffSidebarOpenAtomFamily,
-  diffViewDisplayModeAtom,
-  expiredUserQuestionsAtom,
   filteredDiffFilesAtom,
   filteredSubChatIdAtom,
   isCreatingPrAtom,
@@ -128,26 +129,27 @@ import {
   pendingAuthRetryMessageAtom,
   pendingBuildPlanSubChatIdAtom,
   pendingConflictResolutionMessageAtom,
+  pendingMentionAtom,
   pendingPlanApprovalsAtom,
   pendingPrMessageAtom,
   pendingReviewMessageAtom,
   pendingUserQuestionsAtom,
+  planDisplayModeAtom,
   planEditRefetchTriggerAtomFamily,
   planSidebarOpenAtomFamily,
   previewCustomUrlAtomFamily,
   QUESTIONS_SKIPPED_MESSAGE,
   selectedAgentChatIdAtom,
   selectedCommitAtom,
-  diffActiveTabAtom,
   selectedDiffFilePathAtom,
   setLoading,
   subChatFilesAtom,
   subChatModeAtomFamily,
+  suppressInputFocusAtom,
   undoStackAtom,
   workspaceDiffCacheAtomFamily,
-  pendingMentionAtom,
-  suppressInputFocusAtom,
   type AgentMode,
+  type PlanDisplayMode,
   type SelectedCommit
 } from "../atoms"
 import { BUILTIN_SLASH_COMMANDS } from "../commands"
@@ -165,18 +167,18 @@ import { useHaptic } from "../hooks/use-haptic"
 import { usePastedTextFiles, type PastedTextFile } from "../hooks/use-pasted-text-files"
 import { useTextContextSelection } from "../hooks/use-text-context-selection"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
-import { type SelectedTextContext, type DiffTextContext, createTextPreview } from "../lib/queue-utils"
 import {
   clearSubChatDraft,
   getSubChatDraftFull
 } from "../lib/drafts"
 import { IPCChatTransport } from "../lib/ipc-chat-transport"
 import {
-  createQueueItem,
-  generateQueueId,
+  createQueueItem, createTextPreview, generateQueueId,
+  toQueuedDiffTextContext,
   toQueuedFile,
   toQueuedImage,
-  toQueuedTextContext,
+  toQueuedPastedText,
+  toQueuedTextContext, type DiffTextContext, type SelectedTextContext
 } from "../lib/queue-utils"
 import { RemoteChatTransport } from "../lib/remote-chat-transport"
 import {
@@ -202,6 +204,7 @@ import {
   useAgentSubChatStore,
   type SubChatMeta,
 } from "../stores/sub-chat-store"
+import type { DiffViewMode } from "../ui/agent-diff-view"
 import {
   AgentDiffView,
   diffViewModeAtom,
@@ -221,12 +224,14 @@ import { AgentsHeaderControls } from "../ui/agents-header-controls"
 import { ChatTitleEditor } from "../ui/chat-title-editor"
 import { MobileChatHeader } from "../ui/mobile-chat-header"
 import { QuickCommentInput } from "../ui/quick-comment-input"
+import { SplitViewContainer } from "../ui/split-view-container"
 import { SubChatSelector } from "../ui/sub-chat-selector"
 import { SubChatStatusCard } from "../ui/sub-chat-status-card"
 import { TextSelectionPopover } from "../ui/text-selection-popover"
 import { autoRenameAgentChat } from "../utils/auto-rename"
 import { generateCommitToPrMessage, generatePrMessage, generateReviewMessage } from "../utils/pr-message"
 import { ChatInputArea } from "./chat-input-area"
+import { USE_VIRTUOSO_CHAT, VIRTUOSO_FOLLOW_BOTTOM_THRESHOLD_PX } from "./chat-render-flags"
 import { IsolatedMessagesSection } from "./isolated-messages-section"
 const clearSubChatSelectionAtom = atom(null, () => {})
 const isSubChatMultiSelectModeAtom = atom(false)
@@ -773,18 +778,28 @@ const ScrollToBottomButton = memo(function ScrollToBottomButton({
   hasStackedCards = false,
   subChatId,
   isActive = true,
+  setVisibleRef,
 }: {
   containerRef: React.RefObject<HTMLElement | null>
   onScrollToBottom: () => void
   hasStackedCards?: boolean
   subChatId?: string
   isActive?: boolean
+  setVisibleRef?: React.MutableRefObject<((v: boolean) => void) | null>
 }) {
   const [isVisible, setIsVisible] = useState(false)
 
   // Keep isActive in ref for scroll event handler
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
+
+  // Expose setIsVisible to parent via ref (for Virtuoso atBottomStateChange)
+  useEffect(() => {
+    if (setVisibleRef) setVisibleRef.current = setIsVisible
+    return () => {
+      if (setVisibleRef) setVisibleRef.current = null
+    }
+  }, [setVisibleRef])
 
   useEffect(() => {
     // Skip scroll monitoring for inactive tabs (keep-alive)
@@ -916,19 +931,15 @@ function MessageGroup({ children, isLastGroup }: MessageGroupProps) {
     return () => observer.disconnect()
   }, [])
 
+  const lastGroupMinHeight = isLastGroup
+    ? { minHeight: "calc(var(--chat-container-height) - 48px)" }
+    : {}
+
   return (
     <div
       ref={groupRef}
       className="relative"
-      style={{
-        // content-visibility: auto - браузер пропускает layout/paint для элементов вне viewport
-        // Это ОГРОМНАЯ оптимизация для длинных чатов - рендерится только видимое
-        contentVisibility: "auto",
-        // Примерная высота для правильного скроллбара до рендеринга
-        containIntrinsicSize: "auto 200px",
-        // Последняя группа имеет минимальную высоту контейнера чата (минус отступ)
-        ...(isLastGroup && { minHeight: "calc(var(--chat-container-height) - 32px)" }),
-      }}
+      style={lastGroupMinHeight}
       data-last-group={isLastGroup || undefined}
     >
       {children}
@@ -1918,6 +1929,7 @@ const ChatViewInner = memo(function ChatViewInner({
   onUrlClick,
   existingPrUrl,
   isActive = true,
+  isSplitPane = false,
 }: {
   chat: Chat<any>
   subChatId: string
@@ -1941,9 +1953,12 @@ const ChatViewInner = memo(function ChatViewInner({
   onUrlClick?: (url: string) => void
   existingPrUrl?: string | null
   isActive?: boolean
+  isSplitPane?: boolean
 }) {
   const hasTriggeredRenameRef = useRef(false)
   const hasTriggeredAutoGenerateRef = useRef(false)
+
+  const useVirtuosoChat = USE_VIRTUOSO_CHAT
 
   // Keep isActive in ref for use in callbacks (avoid stale closures)
   const isActiveRef = useRef(isActive)
@@ -1956,6 +1971,19 @@ const ChatViewInner = memo(function ChatViewInner({
   const isInitializingScrollRef = useRef(false) // Flag to ignore scroll events during scroll initialization (content loading)
   const hasUnapprovedPlanRef = useRef(false) // Track unapproved plan state for scroll initialization
   const chatContainerRef = useRef<HTMLElement | null>(null)
+  const virtuosoRef = useRef<VirtuosoHandle | null>(null)
+  const messageIdToRowIndexRef = useRef<Map<string, number>>(new Map())
+  const scrollButtonSetVisibleRef = useRef<((v: boolean) => void) | null>(null)
+
+  const handleAtBottomChange = useCallback((atBottom: boolean) => {
+    shouldAutoScrollRef.current = atBottom
+    scrollButtonSetVisibleRef.current?.(!atBottom)
+  }, [])
+
+  const virtuosoFollowOutput = useCallback((isAtBottom: boolean) => {
+    if (!shouldAutoScrollRef.current) return false
+    return isAtBottom ? "auto" : false
+  }, [])
 
   // Cleanup isAutoScrollingRef on unmount to prevent stuck state
   useEffect(() => {
@@ -2010,10 +2038,9 @@ const ChatViewInner = memo(function ChatViewInner({
   const isAtBottom = useCallback(() => {
     const container = chatContainerRef.current
     if (!container) return true
-    const threshold = 50 // pixels from bottom
     return (
       container.scrollHeight - container.scrollTop - container.clientHeight <=
-      threshold
+      VIRTUOSO_FOLLOW_BOTTOM_THRESHOLD_PX
     )
   }, [])
 
@@ -2054,6 +2081,16 @@ const ChatViewInner = memo(function ChatViewInner({
 
   // Scroll to bottom handler with ease-in-out animation
   const scrollToBottom = useCallback(() => {
+    if (useVirtuosoChat) {
+      shouldAutoScrollRef.current = true
+      virtuosoRef.current?.scrollToIndex({
+        index: "LAST",
+        align: "end",
+        behavior: "smooth",
+      })
+      return
+    }
+
     const container = chatContainerRef.current
     if (!container) return
 
@@ -2188,7 +2225,11 @@ const ChatViewInner = memo(function ChatViewInner({
       // If the component remounts with the same subChatId, the sync will repopulate the atoms
       // If it truly unmounts, the timeout will clear the caches
       const timeoutId = setTimeout(() => {
-        clearSubChatCaches(currentSubChatId)
+        // Only clear when tab is no longer logically alive.
+        const { openSubChatIds } = useAgentSubChatStore.getState()
+        if (!openSubChatIds.includes(currentSubChatId)) {
+          clearSubChatCaches(currentSubChatId)
+        }
       }, 100)
 
       // Store the timeout so it can be cancelled if the component remounts
@@ -2199,7 +2240,7 @@ const ChatViewInner = memo(function ChatViewInner({
   }, [subChatId])
 
   // Cancel pending cleanup if we remount with the same subChatId
-  useEffect(() => {
+  useLayoutEffect(() => {
     const pendingCleanups = (window as any).__pendingCacheCleanups as Map<string, number> | undefined
     if (pendingCleanups?.has(subChatId)) {
       clearTimeout(pendingCleanups.get(subChatId))
@@ -2377,6 +2418,26 @@ const ChatViewInner = memo(function ChatViewInner({
   const isStreamingRef = useRef(isStreaming)
   isStreamingRef.current = isStreaming
 
+  // Map messageId -> virtualized row index (based on user message groups)
+  useEffect(() => {
+    const map = new Map<string, number>()
+    let currentRowIndex = -1
+
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        currentRowIndex += 1
+        map.set(msg.id, currentRowIndex)
+        continue
+      }
+
+      if (currentRowIndex >= 0) {
+        map.set(msg.id, currentRowIndex)
+      }
+    }
+
+    messageIdToRowIndexRef.current = map
+  }, [messages])
+
   // Track compacting status from SDK
   const compactingSubChats = useAtomValue(compactingSubChatsAtom)
   const isCompacting = compactingSubChats.has(subChatId)
@@ -2511,7 +2572,7 @@ const ChatViewInner = memo(function ChatViewInner({
   const [pendingPrMessage, setPendingPrMessage] = useAtom(pendingPrMessageAtom)
 
   useEffect(() => {
-    if (pendingPrMessage?.subChatId === subChatId && !isStreaming && isActive) {
+    if (pendingPrMessage?.subChatId === subChatId && !isStreaming && isActive && !isSplitPane) {
       // Clear the pending message immediately to prevent double-sending
       setPendingPrMessage(null)
 
@@ -2529,7 +2590,7 @@ const ChatViewInner = memo(function ChatViewInner({
       store.addToOpenSubChats(subChatId)
       store.setActiveSubChat(subChatId)
     }
-  }, [pendingPrMessage, isStreaming, isActive, sendMessage, setPendingPrMessage, setIsCreatingPr, subChatId])
+  }, [pendingPrMessage, isStreaming, isActive, isSplitPane, sendMessage, setPendingPrMessage, setIsCreatingPr, subChatId])
 
   const stripComponentMentions = useCallback((value: string) => {
     return value
@@ -2568,7 +2629,7 @@ const ChatViewInner = memo(function ChatViewInner({
   )
 
   useEffect(() => {
-    if (pendingReviewMessage && !isStreaming && isActive) {
+    if (pendingReviewMessage && !isStreaming && isActive && !isSplitPane) {
       // Clear the pending message immediately to prevent double-sending
       setPendingReviewMessage(null)
 
@@ -2578,7 +2639,7 @@ const ChatViewInner = memo(function ChatViewInner({
         parts: [{ type: "text", text: pendingReviewMessage }],
       })
     }
-  }, [pendingReviewMessage, isStreaming, isActive, sendMessage, setPendingReviewMessage])
+  }, [pendingReviewMessage, isStreaming, isActive, isSplitPane, sendMessage, setPendingReviewMessage])
 
   // Watch for pending conflict resolution message and send it
   const [pendingConflictMessage, setPendingConflictMessage] = useAtom(
@@ -2586,7 +2647,7 @@ const ChatViewInner = memo(function ChatViewInner({
   )
 
   useEffect(() => {
-    if (pendingConflictMessage && !isStreaming && isActive) {
+    if (pendingConflictMessage && !isStreaming && isActive && !isSplitPane) {
       // Clear the pending message immediately to prevent double-sending
       setPendingConflictMessage(null)
 
@@ -2596,7 +2657,7 @@ const ChatViewInner = memo(function ChatViewInner({
         parts: [{ type: "text", text: pendingConflictMessage }],
       })
     }
-  }, [pendingConflictMessage, isStreaming, isActive, sendMessage, setPendingConflictMessage])
+  }, [pendingConflictMessage, isStreaming, isActive, isSplitPane, sendMessage, setPendingConflictMessage])
 
   // Handle pending "Build plan" from sidebar (atom - effect is defined after handleApprovePlan)
   const [pendingBuildPlanSubChatId, setPendingBuildPlanSubChatId] = useAtom(
@@ -2629,38 +2690,35 @@ const ChatViewInner = memo(function ChatViewInner({
     [messages],
   )
 
-  // Pre-compute token data for ChatInputArea to avoid passing unstable messages array
-  // This prevents ChatInputArea from re-rendering on every streaming chunk
-  // NOTE: Tokens are counted since the last completed compact boundary.
+  // Pre-compute token data for ChatInputArea to avoid passing unstable messages array.
+  // Context usage follows Claude SDK semantics: use the latest assistant turn's
+  // context size (input + cache), not cumulative sums across historical turns.
   const messageTokenData = useMemo(() => {
-    let startIndex = 0
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i]
-      const parts = (msg as any)?.parts as Array<{ type?: string; state?: string }> | undefined
-      if (
-        parts?.some(
-          (part) =>
-            part.type === "tool-Compact" &&
-            (part.state === "output-available" || part.state === "result"),
-        )
-      ) {
-        // Include the compact result itself in the token window
-        startIndex = i
-      }
-    }
+    const lastAssistantWithMetadata = [...messages]
+      .reverse()
+      .find((msg) => msg.role === "assistant" && !!msg.metadata)
 
-    let totalInputTokens = 0
-    let totalOutputTokens = 0
-    let totalCostUsd = 0
-    for (let i = startIndex; i < messages.length; i++) {
-      const msg = messages[i]
-      if (msg.metadata) {
-        totalInputTokens += msg.metadata.inputTokens || 0
-        totalOutputTokens += msg.metadata.outputTokens || 0
-        totalCostUsd += msg.metadata.totalCostUsd || 0
-      }
-    }
-    const messageCount = Math.max(0, messages.length - startIndex)
+    const metadata = lastAssistantWithMetadata?.metadata as
+      | {
+          inputTokens?: number
+          outputTokens?: number
+          totalCostUsd?: number
+          cacheReadInputTokens?: number
+          cacheCreationInputTokens?: number
+        }
+      | undefined
+
+    const cacheReadInputTokens = metadata?.cacheReadInputTokens || 0
+    const cacheCreationInputTokens = metadata?.cacheCreationInputTokens || 0
+
+    const totalInputTokens =
+      (metadata?.inputTokens || 0) + cacheReadInputTokens + cacheCreationInputTokens
+    const totalOutputTokens = metadata?.outputTokens || 0
+    const totalCostUsd = metadata?.totalCostUsd || 0
+
+    // Keep this tied to rendered messages for memo comparator stability.
+    const messageCount = messages.length
+
     return {
       totalInputTokens,
       totalOutputTokens,
@@ -3499,6 +3557,13 @@ const ChatViewInner = memo(function ChatViewInner({
     scrollInitializedRef.current = false
     isInitializingScrollRef.current = true
 
+    if (useVirtuosoChat) {
+      // Virtuoso owns scrolling; just mark as initialized
+      scrollInitializedRef.current = true
+      isInitializingScrollRef.current = false
+      return
+    }
+
     // IMMEDIATE scroll to bottom - no waiting
     container.scrollTop = container.scrollHeight
     shouldAutoScrollRef.current = true
@@ -3542,9 +3607,18 @@ const ChatViewInner = memo(function ChatViewInner({
     const container = chatContainerRef.current
     if (!container) return
 
+    const handleWheel = (event: WheelEvent) => {
+      if (!isActiveRef.current) return
+      if (event.deltaY < 0) {
+        shouldAutoScrollRef.current = false
+      }
+    }
+
     container.addEventListener("scroll", handleScroll, { passive: true })
+    container.addEventListener("wheel", handleWheel, { passive: true })
     return () => {
       container.removeEventListener("scroll", handleScroll)
+      container.removeEventListener("wheel", handleWheel)
     }
   }, [handleScroll])
 
@@ -3558,6 +3632,17 @@ const ChatViewInner = memo(function ChatViewInner({
 
     // Auto-scroll during streaming if user hasn't scrolled up
     if (shouldAutoScrollRef.current && status === "streaming") {
+      if (useVirtuosoChat) {
+        requestAnimationFrame(() => {
+          virtuosoRef.current?.scrollToIndex({
+            index: "LAST",
+            align: "end",
+            behavior: "auto",
+          })
+        })
+        return
+      }
+
       const container = chatContainerRef.current
       if (container) {
         // Always scroll during streaming if auto-scroll is enabled
@@ -3657,13 +3742,17 @@ const ChatViewInner = memo(function ChatViewInner({
         .filter((f) => !f.isLoading && f.url)
         .map(toQueuedFile)
       const queuedTextContexts = currentTextContexts.map(toQueuedTextContext)
+      const queuedDiffTextContexts = diffTextContextsRef.current.map(toQueuedDiffTextContext)
+      const queuedPastedTexts = currentPastedTexts.map(toQueuedPastedText)
 
       const item = createQueueItem(
         generateQueueId(),
         cleanedInputValue.trim(),
         queuedImages.length > 0 ? queuedImages : undefined,
         queuedFiles.length > 0 ? queuedFiles : undefined,
-        queuedTextContexts.length > 0 ? queuedTextContexts : undefined
+        queuedTextContexts.length > 0 ? queuedTextContexts : undefined,
+        queuedDiffTextContexts.length > 0 ? queuedDiffTextContexts : undefined,
+        queuedPastedTexts.length > 0 ? queuedPastedTexts : undefined
       )
       addToQueue(subChatId, item)
 
@@ -3674,6 +3763,8 @@ const ChatViewInner = memo(function ChatViewInner({
       }
       clearAll()
       clearTextContexts()
+      clearDiffTextContexts()
+      clearPastedTexts()
       return
     }
 
@@ -3934,6 +4025,15 @@ const ChatViewInner = memo(function ChatViewInner({
           return `@[${MENTION_PREFIXES.DIFF}${dtc.filePath}:${lineNum}:${preview}:${encodedText}]`
         })
         mentionPrefix += diffMentions.join(" ") + " "
+      }
+
+      // Add pasted text contexts as mention tokens
+      if (item.pastedTexts && item.pastedTexts.length > 0) {
+        const pastedTextMentions = item.pastedTexts.map((pt) => {
+          const sanitizedPreview = pt.preview.replace(/[:\[\]|]/g, "")
+          return `@[${MENTION_PREFIXES.PASTED}${pt.size}:${sanitizedPreview}|${pt.filePath}]`
+        })
+        mentionPrefix += pastedTextMentions.join(" ") + " "
       }
 
       if (item.message || mentionPrefix) {
@@ -4282,6 +4382,40 @@ const ChatViewInner = memo(function ChatViewInner({
     // Increment lock to cancel any pending scroll operations
     const currentLock = ++searchScrollLockRef.current
 
+    const tryScrollToMatchInDom = () => {
+      // First try to find the highlight mark
+      let targetElement: Element | null = container.querySelector(".search-highlight-current")
+
+      // If no highlight mark, find the message element with matching data attributes
+      if (!targetElement) {
+        const selector = `[data-message-id="${currentSearchMatch.messageId}"][data-part-index="${currentSearchMatch.partIndex}"]`
+        targetElement = container.querySelector(selector)
+      }
+
+      if (targetElement) {
+        // Check if this is inside a sticky user message container
+        const stickyParent = targetElement.closest("[data-user-message-id]")
+        if (stickyParent) {
+          const messageGroupWrapper = stickyParent.parentElement
+          if (messageGroupWrapper) {
+            messageGroupWrapper.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            })
+            return true
+          }
+        }
+
+        targetElement.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        })
+        return true
+      }
+
+      return false
+    }
+
     // Use double requestAnimationFrame + small delay to ensure DOM has updated with new highlights
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -4289,33 +4423,26 @@ const ChatViewInner = memo(function ChatViewInner({
           // Check if this scroll operation is still valid (not superseded by newer one)
           if (searchScrollLockRef.current !== currentLock) return
 
-          // First try to find the highlight mark
-          let targetElement: Element | null = container.querySelector(".search-highlight-current")
+          if (tryScrollToMatchInDom()) return
 
-          // If no highlight mark, find the message element with matching data attributes
-          if (!targetElement) {
-            const selector = `[data-message-id="${currentSearchMatch.messageId}"][data-part-index="${currentSearchMatch.partIndex}"]`
-            targetElement = container.querySelector(selector)
-          }
+          if (useVirtuosoChat) {
+            const rowIndex = messageIdToRowIndexRef.current.get(currentSearchMatch.messageId)
+            if (rowIndex !== undefined) {
+              virtuosoRef.current?.scrollToIndex({
+                index: rowIndex,
+                align: "center",
+                behavior: "smooth",
+              })
 
-          if (targetElement) {
-            // Check if this is inside a sticky user message container
-            const stickyParent = targetElement.closest("[data-user-message-id]")
-            if (stickyParent) {
-              const messageGroupWrapper = stickyParent.parentElement
-              if (messageGroupWrapper) {
-                messageGroupWrapper.scrollIntoView({
-                  behavior: "smooth",
-                  block: "start",
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  setTimeout(() => {
+                    if (searchScrollLockRef.current !== currentLock) return
+                    tryScrollToMatchInDom()
+                  }, 50)
                 })
-                return
-              }
+              })
             }
-
-            targetElement.scrollIntoView({
-              behavior: "smooth",
-              block: "center",
-            })
           }
         }, 50)
       })
@@ -4328,6 +4455,15 @@ const ChatViewInner = memo(function ChatViewInner({
     isStreaming || isCompacting || changedFilesForSubChat.length > 0
   const shouldShowStackedCards =
     !displayQuestions && (queue.length > 0 || shouldShowStatusCard)
+
+  const MessageGroupWrapper = useCallback(
+    ({ children, isLastGroup }: { children: React.ReactNode; isLastGroup?: boolean }) => (
+      <MessageGroup isLastGroup={isLastGroup}>
+        {children}
+      </MessageGroup>
+    ),
+    []
+  )
 
   return (
     <SearchHighlightProvider>
@@ -4533,6 +4669,7 @@ const ChatViewInner = memo(function ChatViewInner({
           hasStackedCards={shouldShowStackedCards}
           subChatId={subChatId}
           isActive={isActive}
+          setVisibleRef={scrollButtonSetVisibleRef}
         />
       </div>
     </SearchHighlightProvider>
@@ -4633,11 +4770,19 @@ export function ChatView({
     [activeSubChatIdForPlan],
   )
   const [isPlanSidebarOpen, setIsPlanSidebarOpen] = useAtom(planSidebarAtom)
+  const [planDisplayMode, setPlanDisplayMode] = useAtom(planDisplayModeAtom)
   const currentPlanPathAtom = useMemo(
     () => currentPlanPathAtomFamily(activeSubChatIdForPlan || ""),
     [activeSubChatIdForPlan],
   )
   const [currentPlanPath, setCurrentPlanPath] = useAtom(currentPlanPathAtom)
+
+  // Effective plan display mode: force center-peek in split view, otherwise use user preference
+  // Computed early because mutual exclusion logic needs it
+  const isSplitViewForPlan = useAgentSubChatStore(
+    useShallow((state) => state.splitPaneIds.length >= 2 && state.splitPaneIds.includes(state.activeSubChatId))
+  )
+  const effectivePlanDisplayMode: PlanDisplayMode = isSplitViewForPlan ? "center-peek" : planDisplayMode
 
   // File viewer sidebar state - per-chat open file path
   const fileViewerAtom = useMemo(
@@ -4659,16 +4804,16 @@ export function ChatView({
   const toggleTerminalHotkey = useResolvedHotkeyDisplay("toggle-terminal")
 
   // Close plan sidebar when switching to a sub-chat that has no plan
+  // Skip in split view — clicking between panes shouldn't close the plan dialog
   const prevSubChatIdRef = useRef(activeSubChatIdForPlan)
   useEffect(() => {
     if (prevSubChatIdRef.current !== activeSubChatIdForPlan) {
-      // Sub-chat changed - if new one has no plan path, close sidebar
-      if (!currentPlanPath) {
+      if (!currentPlanPath && !isSplitViewForPlan) {
         setIsPlanSidebarOpen(false)
       }
       prevSubChatIdRef.current = activeSubChatIdForPlan
     }
-  }, [activeSubChatIdForPlan, currentPlanPath, setIsPlanSidebarOpen])
+  }, [activeSubChatIdForPlan, currentPlanPath, isSplitViewForPlan, setIsPlanSidebarOpen])
   const setPendingBuildPlanSubChatId = useSetAtom(pendingBuildPlanSubChatIdAtom)
 
   // Read plan edit refetch trigger from atom (set by ChatViewInner when Edit completes)
@@ -4736,14 +4881,16 @@ export function ChatView({
   // Track previous states to detect opens/closes
   const prevSidebarStatesRef = useRef({
     details: isDetailsSidebarOpen,
-    plan: isPlanSidebarOpen && !!currentPlanPath,
+    plan: isPlanSidebarOpen && !!currentPlanPath && effectivePlanDisplayMode === "side-peek",
     terminal: isTerminalSidebarOpen,
   })
 
   useEffect(() => {
     const prev = prevSidebarStatesRef.current
     const auto = autoClosedStateRef.current
-    const isPlanOpen = isPlanSidebarOpen && !!currentPlanPath
+    // Only treat plan as a physical sidebar conflict when in side-peek mode
+    // In center-peek (dialog) mode, plan floats above everything — no conflict
+    const isPlanOpen = isPlanSidebarOpen && !!currentPlanPath && effectivePlanDisplayMode === "side-peek"
 
     // Detect state changes
     const detailsJustOpened = isDetailsSidebarOpen && !prev.details
@@ -4808,6 +4955,7 @@ export function ChatView({
     isDetailsSidebarOpen,
     isPlanSidebarOpen,
     currentPlanPath,
+    effectivePlanDisplayMode,
     isTerminalSidebarOpen,
     terminalDisplayMode,
     setIsDetailsSidebarOpen,
@@ -5014,14 +5162,22 @@ export function ChatView({
     openSubChatIds,
     pinnedSubChatIds,
     allSubChats,
+    splitPaneIds,
   } = useAgentSubChatStore(
     useShallow((state) => ({
       activeSubChatId: state.activeSubChatId,
       openSubChatIds: state.openSubChatIds,
       pinnedSubChatIds: state.pinnedSubChatIds,
       allSubChats: state.allSubChats,
+      splitPaneIds: state.splitPaneIds,
     }))
   )
+
+  // isSplitView alias using local splitPaneIds (for JSX rendering)
+  const isSplitView = splitPaneIds.length >= 2 && splitPaneIds.includes(activeSubChatId)
+  const handlePlanDisplayModeChange = useCallback((mode: PlanDisplayMode) => {
+    setPlanDisplayMode(mode)
+  }, [setPlanDisplayMode])
 
   // Clear sub-chat "unseen changes" indicator when sub-chat becomes active
   useEffect(() => {
@@ -5150,7 +5306,7 @@ export function ChatView({
   // Workspace isolation: limit mounted tabs to prevent memory growth
   // CRITICAL: Filter by workspace to prevent rendering sub-chats from other workspaces
   // Always render: active + pinned, then fill with recent up to limit
-  const MAX_MOUNTED_TABS = 5
+  const MAX_MOUNTED_TABS = Math.max(5, splitPaneIds.length + 2)
   const tabsToRender = useMemo(() => {
     if (!activeSubChatId) return []
 
@@ -5178,6 +5334,13 @@ export function ChatView({
     // Start with active (must always be mounted)
     const mustRender = new Set([activeSubChatId])
 
+    // Ensure all split panes are always mounted
+    for (const paneId of splitPaneIds) {
+      if (validSubChatIds.has(paneId)) {
+        mustRender.add(paneId)
+      }
+    }
+
     // Add pinned tabs (only valid ones)
     for (const id of validPinnedIds) {
       mustRender.add(id)
@@ -5202,8 +5365,14 @@ export function ChatView({
     if (!result.includes(activeSubChatId)) {
       result.unshift(activeSubChatId)
     }
+    // Also ensure split pane tabs are in the result
+    for (const paneId of splitPaneIds) {
+      if (validSubChatIds.has(paneId) && !result.includes(paneId)) {
+        result.push(paneId)
+      }
+    }
     return result
-  }, [activeSubChatId, pinnedSubChatIds, openSubChatIds, allSubChats, agentSubChats])
+  }, [activeSubChatId, splitPaneIds, pinnedSubChatIds, openSubChatIds, allSubChats, agentSubChats])
 
   // Get PR status when PR exists (for checking if it's open/merged/closed)
   const hasPrNumber = !!agentChat?.prNumber
@@ -6155,10 +6324,13 @@ Make sure to preserve all functionality from both branches when resolving confli
                   // Ignore audio errors
                 }
               }
-
-              // Show native notification (desktop app, when window not focused)
-              notifyAgentComplete(agentChat?.name || "Agent")
             }
+          }
+
+          // Show native notification if not manually aborted
+          // (the hook handles focus/preference checks internally)
+          if (!wasManuallyAborted) {
+            notifyAgentComplete(agentChat?.name || "Agent")
           }
 
           // Refresh diff stats after agent finishes making changes
@@ -6351,10 +6523,13 @@ Make sure to preserve all functionality from both branches when resolving confli
                   // Ignore audio errors
                 }
               }
-
-              // Show native notification (desktop app, when window not focused)
-              notifyAgentComplete(agentChat?.name || "Agent")
             }
+          }
+
+          // Show native notification if not manually aborted
+          // (the hook handles focus/preference checks internally)
+          if (!wasManuallyAborted) {
+            notifyAgentComplete(agentChat?.name || "Agent")
           }
 
           // Refresh diff stats after agent finishes making changes
@@ -6381,15 +6556,44 @@ Make sure to preserve all functionality from both branches when resolving confli
     agentChat?.name,
   ])
 
+  // Handle creating a new sub-chat in split view
+  const handleCreateNewSubChatInSplit = useCallback(async () => {
+    const store = useAgentSubChatStore.getState()
+    const currentActive = store.activeSubChatId
+
+    // Create the new sub-chat first (reuses existing logic)
+    await handleCreateNewSubChat()
+
+    // After creation, the new sub-chat is now the active one
+    const newActive = useAgentSubChatStore.getState().activeSubChatId
+    if (newActive && currentActive && newActive !== currentActive) {
+      // If there's no existing split, addToSplit will create one with [currentActive, newActive]
+      // If there's an existing split, it will add newActive to it
+      // We need to set the active back to the original so addToSplit pairs correctly
+      store.setActiveSubChat(currentActive)
+      store.addToSplit(newActive)
+      // Set active to the new sub-chat
+      store.setActiveSubChat(newActive)
+    }
+  }, [handleCreateNewSubChat])
+
   // Keyboard shortcut: New sub-chat
   // Web: Opt+Cmd+T (browser uses Cmd+T for new tab)
   // Desktop: Cmd+T
+  // Desktop: Cmd+Shift+T → new sub-chat in split view
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isDesktop = isDesktopApp()
 
-      // Desktop: Cmd+T (without Alt)
-      if (isDesktop && e.metaKey && e.code === "KeyT" && !e.altKey) {
+      // Desktop: Cmd+Shift+T → new sub-chat in split view
+      if (isDesktop && e.metaKey && e.shiftKey && e.code === "KeyT" && !e.altKey) {
+        e.preventDefault()
+        handleCreateNewSubChatInSplit()
+        return
+      }
+
+      // Desktop: Cmd+T (without Alt, without Shift)
+      if (isDesktop && e.metaKey && e.code === "KeyT" && !e.altKey && !e.shiftKey) {
         e.preventDefault()
         handleCreateNewSubChat()
         return
@@ -6404,7 +6608,7 @@ Make sure to preserve all functionality from both branches when resolving confli
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [handleCreateNewSubChat])
+  }, [handleCreateNewSubChat, handleCreateNewSubChatInSplit])
 
   // NOTE: Desktop notifications for pending questions are now triggered directly
   // in ipc-chat-transport.ts when the ask-user-question chunk arrives.
@@ -6986,7 +7190,7 @@ Make sure to preserve all functionality from both branches when resolving confli
             </div>
           )}
 
-          {/* Chat Content - Keep-alive: render all open tabs, hide inactive with CSS */}
+          {/* Chat Content - render active tab explicitly (no hidden keep-alive tabs) */}
           {tabsToRender.length > 0 && agentChat ? (
             <div className="relative flex-1 min-h-0">
               {/* Loading gate: prevent getOrCreateChat() from caching empty messages before data is ready */}
@@ -6994,19 +7198,53 @@ Make sure to preserve all functionality from both branches when resolving confli
                 <div className="flex items-center justify-center h-full">
                   <IconSpinner className="h-6 w-6 animate-spin" />
                 </div>
+              ) : splitPaneIds.length >= 2 && splitPaneIds.includes(activeSubChatId) ? (
+                // SPLIT VIEW: active tab is part of the split group — show N panes
+                <SplitViewContainer
+                  panes={splitPaneIds.map(paneId => {
+                    const chat = getOrCreateChat(paneId)
+                    const isFirstSubChat = getFirstSubChatId(agentSubChats) === paneId
+                    return {
+                      id: paneId,
+                      content: chat ? (
+                        <ChatViewInner
+                          chat={chat}
+                          subChatId={paneId}
+                          parentChatId={chatId}
+                          isFirstSubChat={isFirstSubChat}
+                          onAutoRename={handleAutoRename}
+                          onCreateNewSubChat={handleCreateNewSubChat}
+                          teamId={selectedTeamId || undefined}
+                          repository={repository}
+                          streamId={agentChatStore.getStreamId(paneId)}
+                          isMobile={isMobileFullscreen}
+                          isSubChatsSidebarOpen={subChatsSidebarMode === "sidebar"}
+                          sandboxId={sandboxId || undefined}
+                          projectPath={worktreePath || undefined}
+                          isArchived={isArchived}
+                          onRestoreWorkspace={handleRestoreWorkspace}
+                          existingPrUrl={agentChat?.prUrl}
+                          isActive={true}
+                          isSplitPane={true}
+                        />
+                      ) : null,
+                    }
+                  })}
+                  onCloseSplit={() => useAgentSubChatStore.getState().closeSplit()}
+                />
               ) : (
-                tabsToRender.map(subChatId => {
-                const chat = getOrCreateChat(subChatId)
-                const isActive = subChatId === activeSubChatId
-                const isFirstSubChat = getFirstSubChatId(agentSubChats) === subChatId
+                // NORMAL VIEW: mount only the active sub-chat
+                (() => {
+                  const subChatId = activeSubChatId
+                  if (!subChatId) return null
 
-                // Defense in depth: double-check workspace ownership
-                // Use agentSubChats (server data) as primary source, fall back to allSubChats for optimistic updates
-                // This fixes the race condition where allSubChats is empty after setChatId but before setAllSubChats
-                const belongsToWorkspace = agentSubChats.some(sc => sc.id === subChatId) ||
-                                          allSubChats.some(sc => sc.id === subChatId)
+                  const chat = getOrCreateChat(subChatId)
+                  const isFirstSubChat = getFirstSubChatId(agentSubChats) === subChatId
 
-                if (!chat || !belongsToWorkspace) return null
+                  // Defense in depth: ensure active sub-chat belongs to current workspace
+                  const belongsToWorkspace =
+                    agentSubChats.some((sc) => sc.id === subChatId) ||
+                    allSubChats.some((sc) => sc.id === subChatId)
 
                 return (
                   <div
@@ -7128,9 +7366,8 @@ Make sure to preserve all functionality from both branches when resolving confli
           )}
         </div>
 
-        {/* Plan Sidebar - shows plan files on the right (leftmost right sidebar) */}
-        {/* Only show when we have an active sub-chat with a plan */}
-        {!isMobileFullscreen && activeSubChatIdForPlan && (
+        {/* Plan Sidebar - side-peek mode (ResizableSidebar) */}
+        {!isMobileFullscreen && activeSubChatIdForPlan && effectivePlanDisplayMode === "side-peek" && (
           <ResizableSidebar
             isOpen={isPlanSidebarOpen && !!currentPlanPath}
             onClose={() => setIsPlanSidebarOpen(false)}
@@ -7152,8 +7389,29 @@ Make sure to preserve all functionality from both branches when resolving confli
               onBuildPlan={handleApprovePlanFromSidebar}
               refetchTrigger={planEditRefetchTrigger}
               mode={currentMode}
+              displayMode="side-peek"
+              onDisplayModeChange={handlePlanDisplayModeChange}
             />
           </ResizableSidebar>
+        )}
+        {/* Plan Sidebar - center-peek mode (Dialog overlay) */}
+        {activeSubChatIdForPlan && effectivePlanDisplayMode === "center-peek" && isPlanSidebarOpen && !!currentPlanPath && (
+          <DiffCenterPeekDialog
+            isOpen={true}
+            onClose={() => setIsPlanSidebarOpen(false)}
+          >
+            <AgentPlanSidebar
+              chatId={activeSubChatIdForPlan}
+              planPath={currentPlanPath}
+              onClose={() => setIsPlanSidebarOpen(false)}
+              onBuildPlan={handleApprovePlanFromSidebar}
+              refetchTrigger={planEditRefetchTrigger}
+              mode={currentMode}
+              displayMode="center-peek"
+              onDisplayModeChange={handlePlanDisplayModeChange}
+              isSplitView={isSplitView}
+            />
+          </DiffCenterPeekDialog>
         )}
 
         {/* Diff View - hidden on mobile fullscreen and when diff is not available */}
@@ -7328,7 +7586,7 @@ Make sure to preserve all functionality from both branches when resolving confli
             onBuildPlan={handleApprovePlanFromSidebar}
             planRefetchTrigger={planEditRefetchTrigger}
             activeSubChatId={activeSubChatIdForPlan}
-            isPlanSidebarOpen={isPlanSidebarOpen && !!currentPlanPath}
+            isPlanSidebarOpen={isPlanSidebarOpen && !!currentPlanPath && effectivePlanDisplayMode === "side-peek"}
             isTerminalSidebarOpen={isTerminalSidebarOpen}
             isDiffSidebarOpen={isDiffSidebarOpen}
             diffDisplayMode={diffDisplayMode}

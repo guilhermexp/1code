@@ -1,15 +1,15 @@
 "use client"
 
-import { memo, useMemo } from "react"
+import { memo, useCallback, useMemo } from "react"
 import { useAtomValue } from "jotai"
 import {
   messageAtomFamily,
-  assistantIdsForUserMsgAtomFamily,
-  isLastUserMessageAtomFamily,
-  rollbackTargetSdkUuidForUserMsgAtomFamily,
-  isStreamingAtom,
+  assistantIdsPerChatAtomFamily,
+  isLastUserMessagePerChatAtomFamily,
+  rollbackTargetPerChatAtomFamily,
   isRollingBackAtom,
 } from "../stores/message-store"
+import { useStreamingStatusStore } from "../stores/streaming-status-store"
 import { MemoizedAssistantMessages } from "./messages-list"
 import { extractTextMentions, TextMentionBlocks, TextMentionBlock } from "../mentions/render-file-mentions"
 import { AgentImageItem } from "../ui/agent-image-item"
@@ -101,11 +101,16 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   onRollback,
 }: IsolatedMessageGroupProps) {
   // Subscribe to specific atoms - NOT the whole messages array
+  // Use per-subChat families so split view panes render independently
+  const perChatKey = `${subChatId}:${userMsgId}`
   const userMsg = useAtomValue(messageAtomFamily(userMsgId))
-  const assistantIds = useAtomValue(assistantIdsForUserMsgAtomFamily(userMsgId))
-  const isLastGroup = useAtomValue(isLastUserMessageAtomFamily(userMsgId))
-  const rollbackTargetSdkUuid = useAtomValue(rollbackTargetSdkUuidForUserMsgAtomFamily(userMsgId))
-  const isStreaming = useAtomValue(isStreamingAtom)
+  const assistantIds = useAtomValue(assistantIdsPerChatAtomFamily(perChatKey))
+  const isLastGroup = useAtomValue(isLastUserMessagePerChatAtomFamily(perChatKey))
+  const rollbackTargetSdkUuid = useAtomValue(rollbackTargetPerChatAtomFamily(perChatKey))
+  const subChatStatus = useStreamingStatusStore(
+    useCallback((s) => s.statuses[subChatId] ?? "ready", [subChatId])
+  )
+  const isStreaming = subChatStatus === "streaming" || subChatStatus === "submitted"
   const isRollingBack = useAtomValue(isRollingBackAtom)
 
   // Show rollback button only when this user turn has a valid rollback target.
@@ -149,7 +154,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
     <MessageGroupWrapper isLastGroup={isLastGroup}>
       {/* All attachments in one row - NOT sticky (only when there's also text) */}
       {((!isImageOnlyMessage && imageParts.length > 0) || textMentions.length > 0) && (
-        <div className="mb-2 pointer-events-auto flex flex-wrap items-end gap-1.5">
+        <div className="mb-2 pointer-events-auto flex flex-wrap items-center gap-1.5">
           {imageParts.length > 0 && !isImageOnlyMessage && (() => {
             const resolveImgUrl = (img: any) =>
               img.data?.base64Data && img.data?.mediaType
@@ -195,10 +200,14 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
                   if (imageParts.length > 0) {
                     parts.push(imageParts.length === 1 ? "image" : `${imageParts.length} images`)
                   }
-                  const quoteCount = textMentions.filter(m => m.type === "quote" || m.type === "pasted").length
+                  const quoteCount = textMentions.filter(m => m.type === "quote").length
+                  const pastedCount = textMentions.filter(m => m.type === "pasted").length
                   const codeCount = textMentions.filter(m => m.type === "diff").length
                   if (quoteCount > 0) {
                     parts.push(quoteCount === 1 ? "selected text" : `${quoteCount} text selections`)
+                  }
+                  if (pastedCount > 0) {
+                    parts.push(pastedCount === 1 ? "pasted text" : `${pastedCount} pasted texts`)
                   }
                   if (codeCount > 0) {
                     parts.push(codeCount === 1 ? "code selection" : `${codeCount} code selections`)
