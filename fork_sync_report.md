@@ -1,5 +1,28 @@
 # Fork Sync Report
 
+## Post-sync Incident Note (2026-02-12 - preview logs noise)
+- Issue observed: painel de preview logs com ruído de eventos normais (`dom-ready`/`info`) mascarando erros de conexão de portas/servidores.
+- Impact: diagnóstico lento quando o preview falhava para subir em localhost/portas esperadas.
+- Applied fix:
+  - `src/renderer/features/agents/ui/agent-preview.tsx` agora registra/renderiza apenas logs `error`;
+  - removido registro explícito de `dom-ready`;
+  - UI minimalista do dropdown (`Errors`, `Clear` only).
+- Validation: erros continuam visíveis; eventos informativos não poluem mais a lista.
+
+## Post-sync Incident Note (2026-02-12)
+- Issue observed after sync: chat messages hidden in UI while agent kept running.
+- Confirmed data integrity: `sub_chats.messages` still contained assistant messages (DB valid).
+- Effective hotfix: disable virtualized chat rendering (`USE_VIRTUOSO_CHAT = false`).
+- Permanent hardening added in renderer store/components:
+  - selectors now derive user/assistant grouping from `messageAtomFamily` values.
+  - Virtuoso integration points restored (`customScrollParent`, refs, follow/atBottom callbacks) for safe future re-enable.
+- Files touched for this incident:
+  - `src/renderer/features/agents/main/chat-render-flags.ts`
+  - `src/renderer/features/agents/main/active-chat.tsx`
+  - `src/renderer/features/agents/main/isolated-messages-section.tsx`
+  - `src/renderer/features/agents/main/isolated-message-group.tsx`
+  - `src/renderer/features/agents/stores/message-store.ts`
+
 ## Execution
 - Timestamp (UTC): 2026-02-12T03:06:47Z
 - Repository: /Users/guilhermevarela/Documents/Projetos/1code
@@ -109,4 +132,3 @@
 - Push exit code: 0
 - Sync before push: unknown
 - Sync after push: unknown
-

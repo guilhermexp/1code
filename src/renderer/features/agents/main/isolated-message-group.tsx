@@ -4,8 +4,8 @@ import { memo, useCallback, useMemo } from "react"
 import { useAtomValue } from "jotai"
 import {
   messageAtomFamily,
-  assistantIdsPerChatAtomFamily,
-  isLastUserMessagePerChatAtomFamily,
+  assistantIdsPerChatFromMessagesAtomFamily,
+  isLastUserMessagePerChatFromMessagesAtomFamily,
   rollbackTargetPerChatAtomFamily,
   isRollingBackAtom,
 } from "../stores/message-store"
@@ -104,8 +104,8 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   // Use per-subChat families so split view panes render independently
   const perChatKey = `${subChatId}:${userMsgId}`
   const userMsg = useAtomValue(messageAtomFamily(userMsgId))
-  const assistantIds = useAtomValue(assistantIdsPerChatAtomFamily(perChatKey))
-  const isLastGroup = useAtomValue(isLastUserMessagePerChatAtomFamily(perChatKey))
+  const assistantIds = useAtomValue(assistantIdsPerChatFromMessagesAtomFamily(perChatKey))
+  const isLastGroup = useAtomValue(isLastUserMessagePerChatFromMessagesAtomFamily(perChatKey))
   const rollbackTargetSdkUuid = useAtomValue(rollbackTargetPerChatAtomFamily(perChatKey))
   const subChatStatus = useStreamingStatusStore(
     useCallback((s) => s.statuses[subChatId] ?? "ready", [subChatId])

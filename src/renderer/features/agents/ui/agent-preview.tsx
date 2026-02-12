@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, createElement } from "react"
 import { useAtom } from "jotai"
 import { Button } from "../../../components/ui/button"
-import { RotateCw, RefreshCcwDot, MousePointer2, ChevronLeft, ChevronRight, Copy, Trash2, ListChecks, Code } from "lucide-react"
+import { RotateCw, RefreshCcwDot, MousePointer2, ChevronLeft, ChevronRight, Trash2, ListChecks, Code } from "lucide-react"
 import {
   ExternalLinkIcon,
   IconDoubleChevronRight,
@@ -138,6 +138,20 @@ function dispatchInspectorSelection(chatId: string, content: string) {
   )
 }
 
+function buildPreviewErrorsForChatInput(previewUrl: string, errors: PreviewLogEntry[]): string {
+  const lines = errors.map((entry) => {
+    const timestamp = new Date(entry.timestamp).toLocaleTimeString()
+    return `- [${timestamp}] [${entry.source}] ${entry.message}`
+  })
+
+  return [
+    "Preview errors:",
+    `URL: ${previewUrl}`,
+    "",
+    ...lines,
+  ].join("\n")
+}
+
 export function AgentPreview({
   chatId,
   sandboxId,
@@ -197,6 +211,7 @@ export function AgentPreview({
 
   const pushPreviewLog = useCallback(
     (level: PreviewLogLevel, source: string, ...args: unknown[]) => {
+      if (level !== "error") return
       const message = args.map(serializeLogValue).join(" ").trim()
       if (!message) return
       if (shouldIgnorePreviewLog(message)) return
@@ -265,7 +280,6 @@ export function AgentPreview({
 
     const handleDomReady = () => {
       setWebviewDomReady(true)
-      pushPreviewLog("info", "webview", "dom-ready")
       updateWebviewNavState()
     }
 
@@ -421,41 +435,34 @@ export function AgentPreview({
     return url
   }, [previewBaseUrl, loadedPath, editableCustomUrl, cacheBuster])
 
-  const copyPreviewLogs = useCallback(async () => {
+  const sendPreviewErrorsToChat = useCallback(() => {
     if (previewLogs.length === 0) {
-      toast.message("No preview logs to copy")
+      toast.message("No errors to send")
       return
     }
 
-    const header = [
-      `# Preview Logs`,
-      `chatId: ${chatId}`,
-      `url: ${previewUrl}`,
-      `capturedAt: ${new Date().toISOString()}`,
-      "",
-    ].join("\n")
-
-    const body = previewLogs
-      .map((entry) => {
-        const ts = new Date(entry.timestamp).toISOString()
-        return `[${ts}] [${entry.level.toUpperCase()}] [${entry.source}] ${entry.message}`
-      })
-      .join("\n")
-
-    const output = `${header}${body}`
-
+    let previewUrlForInput = "about:blank"
     try {
-      if (window.desktopApi?.clipboardWrite) {
-        await window.desktopApi.clipboardWrite(output)
-      } else {
-        await navigator.clipboard.writeText(output)
+      const webviewUrl = webviewEl?.getURL?.()
+      if (typeof webviewUrl === "string" && webviewUrl.trim()) {
+        previewUrlForInput = webviewUrl
       }
-      toast.success("Preview logs copied")
-    } catch (error) {
-      toast.error("Failed to copy preview logs")
-      pushPreviewLog("error", "preview-logs", "copy-failed", error)
-    }
-  }, [chatId, previewLogs, previewUrl, pushPreviewLog])
+    } catch {}
+
+    const text = buildPreviewErrorsForChatInput(previewUrlForInput, previewLogs)
+
+    window.dispatchEvent(
+      new CustomEvent("agent-preview-send-errors-to-input", {
+        detail: {
+          chatId,
+          text,
+        },
+      }),
+    )
+
+    clearPreviewLogs()
+    toast.success("Errors sent to chat input")
+  }, [chatId, clearPreviewLogs, previewLogs, webviewEl])
 
   // Handle path selection from URL bar
   const handlePathSelect = useCallback(
@@ -1531,13 +1538,13 @@ export function AgentPreview({
                 >
                   <ListChecks className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-[11px] text-muted-foreground">
-                    Logs{previewLogs.length > 0 ? ` (${previewLogs.length})` : ""}
+                    Errors{previewLogs.length > 0 ? ` (${previewLogs.length})` : ""}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-[440px] p-0">
                 <div className="px-3 py-2 border-b border-border/50">
-                  <p className="text-xs font-medium">Preview Logs</p>
+                  <p className="text-xs font-medium">Preview Errors</p>
                   <p className="text-[11px] text-muted-foreground truncate">{previewUrl}</p>
                 </div>
                 <div className="px-2 py-2 border-b border-border/50 flex items-center gap-1.5">
@@ -1545,23 +1552,11 @@ export function AgentPreview({
                     variant="outline"
                     size="sm"
                     className="h-7 px-2 text-xs gap-1.5"
-                    onClick={copyPreviewLogs}
+                    onClick={sendPreviewErrorsToChat}
+                    disabled={previewLogs.length === 0}
                   >
-                    <Copy className="h-3.5 w-3.5" />
-                    Copy for Agent
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2 text-xs gap-1.5"
-                    onClick={() => {
-                      clearPreviewLogs()
-                      setReloadKey((prev) => prev + 1)
-                    }}
-                    title="Clear logs and reload preview to capture fresh logs"
-                  >
-                    <RotateCw className="h-3.5 w-3.5" />
-                    Refresh
+                    <IconChatBubble className="h-3.5 w-3.5" />
+                    Send to Chat
                   </Button>
                   <Button
                     variant="ghost"
@@ -1577,7 +1572,7 @@ export function AgentPreview({
                 <div className="max-h-[320px] overflow-y-auto p-2 space-y-1.5">
                   {latestPreviewLogs.length === 0 ? (
                     <div className="text-xs text-muted-foreground px-1 py-2">
-                      No logs captured yet.
+                      No errors captured.
                     </div>
                   ) : (
                     latestPreviewLogs.map((entry) => (

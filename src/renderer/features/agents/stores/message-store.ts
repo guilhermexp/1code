@@ -303,6 +303,28 @@ export const userMessageIdsPerChatAtom = atomFamily((subChatId: string) =>
   })
 )
 
+// More robust per-subChat user IDs selector that derives roles from message atoms
+// instead of role caches. This avoids UI desync if role caches get stale.
+const userMessageIdsPerChatFromMessagesCache = new Map<string, string[]>()
+export const userMessageIdsPerChatFromMessagesAtom = atomFamily((subChatId: string) =>
+  atom((get) => {
+    const ids = get(messageIdsPerChatAtom(subChatId))
+    const newUserIds = ids.filter((id) => get(messageAtomFamily(id))?.role === "user")
+
+    const cached = userMessageIdsPerChatFromMessagesCache.get(subChatId)
+    if (
+      cached &&
+      newUserIds.length === cached.length &&
+      newUserIds.every((id, i) => id === cached[i])
+    ) {
+      return cached
+    }
+
+    userMessageIdsPerChatFromMessagesCache.set(subChatId, newUserIds)
+    return newUserIds
+  })
+)
+
 // ============================================================================
 // MESSAGE GROUPS - For rendering structure
 // ============================================================================
@@ -424,6 +446,35 @@ export const assistantIdsPerChatAtomFamily = atomFamily((key: string) => {
   })
 })
 
+// More robust per-subChat assistant IDs selector that derives grouping from
+// message atoms (role field) instead of role caches.
+const assistantIdsPerChatFromMessagesCache = new Map<string, string[]>()
+export const assistantIdsPerChatFromMessagesAtomFamily = atomFamily((key: string) => {
+  const sepIdx = key.indexOf(":")
+  const subChatId = key.slice(0, sepIdx)
+  const userMsgId = key.slice(sepIdx + 1)
+  return atom((get) => {
+    const ids = get(messageIdsPerChatAtom(subChatId))
+    const userMsgIndex = ids.indexOf(userMsgId)
+    if (userMsgIndex < 0) return []
+
+    const newIds: string[] = []
+    for (let i = userMsgIndex + 1; i < ids.length; i++) {
+      const id = ids[i]
+      const role = get(messageAtomFamily(id))?.role
+      if (role === "user") break
+      if (role === "assistant") newIds.push(id)
+    }
+
+    const cached = assistantIdsPerChatFromMessagesCache.get(key)
+    if (cached && cached.length === newIds.length && cached.every((id, i) => id === newIds[i])) {
+      return cached
+    }
+    assistantIdsPerChatFromMessagesCache.set(key, newIds)
+    return newIds
+  })
+})
+
 // Per-subChat isLastUserMessage (for split view)
 export const isLastUserMessagePerChatAtomFamily = atomFamily((key: string) => {
   const sepIdx = key.indexOf(":")
@@ -431,6 +482,17 @@ export const isLastUserMessagePerChatAtomFamily = atomFamily((key: string) => {
   const userMsgId = key.slice(sepIdx + 1)
   return atom((get) => {
     const userIds = get(userMessageIdsPerChatAtom(subChatId))
+    return userIds[userIds.length - 1] === userMsgId
+  })
+})
+
+// Robust per-subChat "is last user message" selector based on message atoms.
+export const isLastUserMessagePerChatFromMessagesAtomFamily = atomFamily((key: string) => {
+  const sepIdx = key.indexOf(":")
+  const subChatId = key.slice(0, sepIdx)
+  const userMsgId = key.slice(sepIdx + 1)
+  return atom((get) => {
+    const userIds = get(userMessageIdsPerChatFromMessagesAtom(subChatId))
     return userIds[userIds.length - 1] === userMsgId
   })
 })

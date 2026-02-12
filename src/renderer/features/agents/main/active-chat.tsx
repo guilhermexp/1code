@@ -2627,6 +2627,27 @@ const ChatViewInner = memo(function ChatViewInner({
     return () => window.removeEventListener("agent-add-component-context", handleAddComponentContext as EventListener)
   }, [parentChatId, subChatId, addTextContextOriginal])
 
+  useEffect(() => {
+    const handlePreviewErrorsToInput = (e: CustomEvent) => {
+      const { chatId: eventChatId, text } = e.detail ?? {}
+      if (eventChatId !== parentChatId && eventChatId !== subChatId) return
+      if (typeof text !== "string" || !text.trim()) return
+
+      const currentValue = editorRef.current?.getValue() || ""
+      const nextValue = currentValue.trim() ? `${currentValue.trim()}\n\n${text}` : text
+
+      editorRef.current?.setValue(nextValue)
+      editorRef.current?.focus()
+    }
+
+    window.addEventListener("agent-preview-send-errors-to-input", handlePreviewErrorsToInput as EventListener)
+    return () =>
+      window.removeEventListener(
+        "agent-preview-send-errors-to-input",
+        handlePreviewErrorsToInput as EventListener,
+      )
+  }, [parentChatId, subChatId])
+
   // Watch for pending Review message and send it
   const [pendingReviewMessage, setPendingReviewMessage] = useAtom(
     pendingReviewMessageAtom,
@@ -4563,6 +4584,10 @@ const ChatViewInner = memo(function ChatViewInner({
               subChatId={subChatId}
               chatId={parentChatId}
               isMobile={isMobile}
+              followOutput={virtuosoFollowOutput}
+              scrollParentRef={chatContainerRef}
+              onAtBottomStateChange={handleAtBottomChange}
+              virtuosoRef={virtuosoRef}
               sandboxSetupStatus={sandboxSetupStatus}
               stickyTopClass={stickyTopClass}
               sandboxSetupError={sandboxSetupError}

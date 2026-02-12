@@ -1,5 +1,50 @@
 # Fork Changelog
 
+## 2026-02-12 - Post-upstream sync note (preview logs noise)
+
+### Symptom
+- Preview logs UI mostrava muito ruído de ciclo normal de webview (ex.: `dom-ready`) e dificultava identificar falhas reais de portas/servidores no preview.
+
+### Fix applied
+- O painel de logs do preview foi simplificado para foco em erros:
+  - registra e exibe apenas eventos `error`;
+  - remove o log informativo `dom-ready`;
+  - renomeia o dropdown para `Errors`;
+  - remove ações de ruído (`Copy for Agent` e `Refresh`) e mantém `Clear`.
+
+### File touched
+- `src/renderer/features/agents/ui/agent-preview.tsx`
+
+## 2026-02-12 - Post-upstream sync incident (chat messages hidden)
+
+### Symptom
+- Agent ran normally (backend streaming active), but chat body rendered blank in some threads.
+- Input/footer remained visible; messages (especially assistant output) did not appear.
+
+### Root Cause (fork context)
+- Regression after upstream sync in chat rendering pipeline around virtualized message list (`Virtuoso`) and per-subchat message selectors.
+- The UI depended on cached per-chat role/group selectors; under some tab/switch timing, rendered groups could become empty even with persisted assistant messages in DB.
+
+### Stable Fix applied
+- Keep non-virtualized rendering enabled by default:
+  - `src/renderer/features/agents/main/chat-render-flags.ts`
+  - `USE_VIRTUOSO_CHAT = false`
+- Preserve robust Virtuoso wiring in code (for future re-enable):
+  - `scrollParentRef`, `virtuosoRef`, `atBottomStateChange`, `followOutput`
+- Make grouped selectors derive from actual `messageAtomFamily` (source of truth), not only role caches:
+  - `userMessageIdsPerChatFromMessagesAtom`
+  - `assistantIdsPerChatFromMessagesAtomFamily`
+  - `isLastUserMessagePerChatFromMessagesAtomFamily`
+
+### Preventive checklist for next upstream sync
+- After merge, validate at least 3 existing chats with historical assistant messages.
+- If chat body is blank but backend is streaming, first toggle:
+  - `USE_VIRTUOSO_CHAT = false`
+- Re-check selectors in:
+  - `src/renderer/features/agents/stores/message-store.ts`
+  - `src/renderer/features/agents/main/isolated-messages-section.tsx`
+  - `src/renderer/features/agents/main/isolated-message-group.tsx`
+
 bun run deploy (para auto deploy local)
 
 **Fork:** `guilhermexp/1code`
@@ -484,4 +529,3 @@ Todas as mudancas sao **aditivas** e nao quebram compatibilidade com o upstream.
 
 - Sync result: merged
 - Last synced upstream commit: aad4b92
-

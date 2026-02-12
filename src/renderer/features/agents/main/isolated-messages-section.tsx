@@ -1,9 +1,9 @@
 "use client"
 
 import { useAtomValue } from "jotai"
-import { forwardRef, memo } from "react"
+import { forwardRef, memo, useLayoutEffect, useState } from "react"
 import { Virtuoso, type FollowOutput, type VirtuosoHandle } from "react-virtuoso"
-import { currentSubChatIdAtom, userMessageIdsPerChatAtom } from "../stores/message-store"
+import { currentSubChatIdAtom, userMessageIdsPerChatFromMessagesAtom } from "../stores/message-store"
 import { USE_VIRTUOSO_CHAT, VIRTUOSO_FOLLOW_BOTTOM_THRESHOLD_PX } from "./chat-render-flags"
 import { IsolatedMessageGroup } from "./isolated-message-group"
 
@@ -96,6 +96,9 @@ interface IsolatedMessagesSectionProps {
   isMobile: boolean
   isSplitPane?: boolean
   followOutput?: FollowOutput
+  scrollParentRef?: React.RefObject<HTMLElement | null>
+  onAtBottomStateChange?: (atBottom: boolean) => void
+  virtuosoRef?: React.RefObject<VirtuosoHandle | null>
   sandboxSetupStatus: "cloning" | "ready" | "error"
   stickyTopClass: string
   sandboxSetupError?: string
@@ -129,6 +132,9 @@ function areSectionPropsEqual(
     prev.isMobile === next.isMobile &&
     prev.isSplitPane === next.isSplitPane &&
     prev.followOutput === next.followOutput &&
+    prev.scrollParentRef === next.scrollParentRef &&
+    prev.onAtBottomStateChange === next.onAtBottomStateChange &&
+    prev.virtuosoRef === next.virtuosoRef &&
     prev.sandboxSetupStatus === next.sandboxSetupStatus &&
     prev.stickyTopClass === next.stickyTopClass &&
     prev.sandboxSetupError === next.sandboxSetupError &&
@@ -148,6 +154,9 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
   isMobile,
   isSplitPane = false,
   followOutput,
+  scrollParentRef,
+  onAtBottomStateChange,
+  virtuosoRef,
   sandboxSetupStatus,
   stickyTopClass,
   sandboxSetupError,
@@ -165,7 +174,7 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
   // In split view, each pane must render its own sub-chat regardless of
   // currentSubChatIdAtom, so we bypass this guard for split panes.
   const currentSubChatId = useAtomValue(currentSubChatIdAtom)
-  const rawUserMsgIds = useAtomValue(userMessageIdsPerChatAtom(subChatId))
+  const rawUserMsgIds = useAtomValue(userMessageIdsPerChatFromMessagesAtom(subChatId))
   const isActiveChat = currentSubChatId === subChatId
   const shouldRenderForSubChat = isSplitPane || isActiveChat
 
@@ -177,6 +186,14 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
   // data is available for this sub-chat.
   const hasVirtuosoData = userMsgIds.length > 0
   const shouldDelayVirtuosoMount = useVirtuosoChat && !hasVirtuosoData
+  const [scrollParentEl, setScrollParentEl] = useState<HTMLElement | null>(
+    () => scrollParentRef?.current ?? null
+  )
+
+  useLayoutEffect(() => {
+    const nextEl = scrollParentRef?.current ?? null
+    setScrollParentEl((prev) => (nextEl && nextEl !== prev ? nextEl : prev))
+  }, [scrollParentRef])
 
   if (!useVirtuosoChat) {
     // Non-Virtuoso path: guard against stale data from other sub-chats
@@ -216,11 +233,14 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
     <Virtuoso
       data={userMsgIds}
       computeItemKey={(_, userMsgId) => userMsgId}
+      customScrollParent={scrollParentEl ?? undefined}
       followOutput={shouldRenderForSubChat ? followOutput : false}
+      atBottomStateChange={onAtBottomStateChange}
       atBottomThreshold={VIRTUOSO_FOLLOW_BOTTOM_THRESHOLD_PX}
       initialTopMostItemIndex={
         userMsgIds.length > 0 ? { index: "LAST", align: "end" } : undefined
       }
+      ref={virtuosoRef}
       style={{ height: "100%", width: "100%" }}
       increaseViewportBy={{ top: 300, bottom: 300 }}
       defaultItemHeight={38}
