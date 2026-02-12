@@ -126,13 +126,13 @@ import { getWindowId } from "../../contexts/WindowContext"
 import { AgentsHelpPopover } from "../agents/components/agents-help-popover"
 import { getShortcutKey, isDesktopApp } from "../../lib/utils/platform"
 import { useResolvedHotkeyDisplay, useResolvedHotkeyDisplayWithAlt } from "../../lib/hotkeys"
-import { pluralize } from "../agents/utils/pluralize"
 import { useNewChatDrafts, deleteNewChatDraft, type NewChatDraft } from "../agents/lib/drafts"
 import {
   TrafficLightSpacer,
   TrafficLights,
 } from "../agents/components/traffic-light-spacer"
 import { useHotkeys } from "react-hotkeys-hook"
+import { useTranslation } from "react-i18next"
 import { Checkbox } from "../../components/ui/checkbox"
 import { useHaptic } from "./hooks/use-haptic"
 import { TypewriterText } from "../../components/ui/typewriter-text"
@@ -350,6 +350,8 @@ const DraftItem = React.memo(function DraftItem({
   onDelete: (draftId: string) => void
   formatTime: (dateStr: string) => string
 }) {
+  const { t } = useTranslation("sidebar")
+
   return (
     <div
       onClick={() => onSelect(draftId)}
@@ -391,7 +393,7 @@ const DraftItem = React.memo(function DraftItem({
                 }}
                 tabIndex={-1}
                 className="flex-shrink-0 text-muted-foreground hover:text-foreground active:text-foreground transition-[opacity,transform,color] duration-150 ease-out opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto active:scale-[0.97]"
-                aria-label="Delete draft"
+                aria-label={t("aria.deleteDraft")}
               >
                 <TrashIcon className="h-3.5 w-3.5" />
               </button>
@@ -399,7 +401,7 @@ const DraftItem = React.memo(function DraftItem({
           </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] text-muted-foreground/60 truncate">
-              <span className="text-blue-500">Draft</span>
+              <span className="text-blue-500">{t("items.draft")}</span>
               {projectGitRepo
                 ? ` • ${projectGitRepo}`
                 : projectName
@@ -516,6 +518,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
 }) {
   // Resolved hotkey for context menu
   const archiveWorkspaceHotkey = useResolvedHotkeyDisplay("archive-workspace")
+  const { t } = useTranslation("sidebar")
 
   return (
     <ContextMenu>
@@ -595,7 +598,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 >
                   <TypewriterText
                     text={chatName || ""}
-                    placeholder="New workspace"
+                    placeholder={t("items.newWorkspacePlaceholder")}
                     id={chatId}
                     isJustCreated={isJustCreated}
                     showPlaceholder={true}
@@ -659,7 +662,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
                       }}
                       tabIndex={-1}
                       className="absolute inset-0 flex items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground transition-[opacity,transform,color] duration-150 ease-out opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto active:scale-[0.97]"
-                      aria-label="Archive workspace"
+                      aria-label={t("aria.archiveWorkspace")}
                     >
                       <ArchiveIcon className="h-3.5 w-3.5" />
                     </button>
@@ -702,16 +705,16 @@ const AgentChatItem = React.memo(function AgentChatItem({
               <>
                 <ContextMenuItem onClick={areAllSelectedPinned ? onBulkUnpin : onBulkPin}>
                   {areAllSelectedPinned
-                    ? `Unpin ${selectedChatIdsSize} ${pluralize(selectedChatIdsSize, "workspace")}`
-                    : `Pin ${selectedChatIdsSize} ${pluralize(selectedChatIdsSize, "workspace")}`}
+                    ? t("context.unpinSelected", { count: selectedChatIdsSize })
+                    : t("context.pinSelected", { count: selectedChatIdsSize })}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
               </>
             )}
             <ContextMenuItem onClick={onBulkArchive} disabled={archiveBatchPending}>
               {archiveBatchPending
-                ? "Archiving..."
-                : `Archive ${selectedChatIdsSize} ${pluralize(selectedChatIdsSize, "workspace")}`}
+                ? t("context.archivingSelected")
+                : t("context.archiveSelected", { count: selectedChatIdsSize })}
             </ContextMenuItem>
           </>
         ) : (
@@ -719,67 +722,67 @@ const AgentChatItem = React.memo(function AgentChatItem({
             {isRemote && (
               <>
                 <ContextMenuItem onClick={() => onOpenLocally(chatId)}>
-                  Fork Locally
+                  {t("context.forkLocally")}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
               </>
             )}
             <ContextMenuItem onClick={() => onTogglePin(chatId)}>
-              {isPinned ? "Unpin workspace" : "Pin workspace"}
+              {isPinned ? t("context.unpinWorkspace") : t("context.pinWorkspace")}
             </ContextMenuItem>
             <ContextMenuItem onClick={() => onRenameClick({ id: chatId, name: chatName, isRemote })}>
-              Rename workspace
+              {t("context.renameWorkspace")}
             </ContextMenuItem>
             {chatBranch && (
               <ContextMenuItem onClick={() => onCopyBranch(chatBranch)}>
-                Copy branch name
+                {t("context.copyBranchName")}
               </ContextMenuItem>
             )}
             <ContextMenuSub>
-              <ContextMenuSubTrigger>Export workspace</ContextMenuSubTrigger>
+              <ContextMenuSubTrigger>{t("context.exportWorkspace")}</ContextMenuSubTrigger>
               <ContextMenuSubContent sideOffset={6} alignOffset={-4}>
                 <ContextMenuItem onClick={() => exportChat({ chatId: isRemote ? chatId.replace(/^remote_/, '') : chatId, format: "markdown", isRemote })}>
-                  Download as Markdown
+                  {t("context.downloadAsMarkdown")}
                 </ContextMenuItem>
                 <ContextMenuItem onClick={() => exportChat({ chatId: isRemote ? chatId.replace(/^remote_/, '') : chatId, format: "json", isRemote })}>
-                  Download as JSON
+                  {t("context.downloadAsJson")}
                 </ContextMenuItem>
                 <ContextMenuItem onClick={() => exportChat({ chatId: isRemote ? chatId.replace(/^remote_/, '') : chatId, format: "text", isRemote })}>
-                  Download as Text
+                  {t("context.downloadAsText")}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
                 <ContextMenuItem onClick={() => copyChat({ chatId: isRemote ? chatId.replace(/^remote_/, '') : chatId, format: "markdown", isRemote })}>
-                  Copy as Markdown
+                  {t("context.copyAsMarkdown")}
                 </ContextMenuItem>
                 <ContextMenuItem onClick={() => copyChat({ chatId: isRemote ? chatId.replace(/^remote_/, '') : chatId, format: "json", isRemote })}>
-                  Copy as JSON
+                  {t("context.copyAsJson")}
                 </ContextMenuItem>
                 <ContextMenuItem onClick={() => copyChat({ chatId: isRemote ? chatId.replace(/^remote_/, '') : chatId, format: "text", isRemote })}>
-                  Copy as Text
+                  {t("context.copyAsText")}
                 </ContextMenuItem>
               </ContextMenuSubContent>
             </ContextMenuSub>
             {isDesktop && (
               <ContextMenuItem onClick={() => window.desktopApi?.newWindow({ chatId })}>
-                Open in new window
+                {t("context.openInNewWindow")}
               </ContextMenuItem>
             )}
             <ContextMenuSeparator />
             <ContextMenuItem onClick={() => onArchive(chatId)} className="justify-between">
-              Archive workspace
+              {t("context.archiveWorkspace")}
               {archiveWorkspaceHotkey && <Kbd>{archiveWorkspaceHotkey}</Kbd>}
             </ContextMenuItem>
             <ContextMenuItem
               onClick={() => onArchiveAllBelow(chatId)}
               disabled={isLastInFilteredChats}
             >
-              Archive all below
+              {t("context.archiveAllBelow")}
             </ContextMenuItem>
             <ContextMenuItem
               onClick={() => onArchiveOthers(chatId)}
               disabled={filteredChatsLength === 1}
             >
-              Archive others
+              {t("context.archiveOthers")}
             </ContextMenuItem>
           </>
         )}
@@ -928,6 +931,8 @@ const ChatListSection = React.memo(function ChatListSection({
   formatTime,
   justCreatedIds,
 }: ChatListSectionProps) {
+  const { t } = useTranslation("sidebar")
+
   if (chats.length === 0) return null
 
   // Pre-compute global indices map to avoid O(n²) findIndex in map()
@@ -945,8 +950,8 @@ const ChatListSection = React.memo(function ChatListSection({
     for (const chat of chats) {
       const project = chat.projectId ? projectsMap.get(chat.projectId) : null
       const groupName = chat.isRemote
-        ? chat.meta?.repository || "Remote project"
-        : project?.gitRepo || project?.name || "Unknown project"
+        ? chat.meta?.repository || t("labels.remoteProject")
+        : project?.gitRepo || project?.name || t("labels.unknownProject")
       const groupKey = chat.isRemote
         ? `remote:${chat.meta?.repository || "unknown"}`
         : `local:${chat.projectId || groupName}`
@@ -1078,7 +1083,7 @@ const ChatListSection = React.memo(function ChatListSection({
                       ? repoName
                         ? `${repoName} • ${chat.branch}`
                         : chat.branch
-                      : repoName || (chat.isRemote ? "Remote project" : "Local project")
+                      : repoName || (chat.isRemote ? t("labels.remoteProject") : t("labels.localProject"))
 
                     const isChecked = selectedChatIds.has(chat.id)
                     // TODO: remote stats disabled — backend no longer computes them (was causing 50s+ loads)
@@ -1187,6 +1192,7 @@ const ArchiveButton = memo(forwardRef<HTMLButtonElement, React.ButtonHTMLAttribu
 // Isolated Kanban Button - clears selection to show Kanban view
 const KanbanButton = memo(function KanbanButton() {
   const kanbanEnabled = useAtomValue(betaKanbanEnabledAtom)
+  const { t } = useTranslation("sidebar")
   const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
   const setSelectedDraftId = useSetAtom(selectedDraftIdAtom)
   const setShowNewChatForm = useSetAtom(showNewChatFormAtom)
@@ -1218,7 +1224,7 @@ const KanbanButton = memo(function KanbanButton() {
         </button>
       </TooltipTrigger>
       <TooltipContent>
-        Kanban View
+        {t("kanban.view")}
         {openKanbanHotkey && <Kbd>{openKanbanHotkey}</Kbd>}
       </TooltipContent>
     </Tooltip>
@@ -1259,6 +1265,7 @@ function SidebarAutomationsIcon(props: React.SVGProps<SVGSVGElement>) {
 
 // Isolated Inbox Button - full-width navigation link matching web layout
 const InboxButton = memo(function InboxButton() {
+  const { t } = useTranslation("sidebar")
   const automationsEnabled = useAtomValue(betaAutomationsEnabledAtom)
   const desktopView = useAtomValue(desktopViewAtom)
   const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
@@ -1298,7 +1305,7 @@ const InboxButton = memo(function InboxButton() {
       )}
     >
       <SidebarInboxIcon className="h-4 w-4" />
-      <span className="flex-1 text-left">Inbox</span>
+      <span className="flex-1 text-left">{t("navigation.inbox")}</span>
       {inboxUnreadCount > 0 && (
         <span className="bg-muted text-muted-foreground text-xs font-medium px-1.5 py-0.5 rounded-md min-w-[20px] text-center">
           {inboxUnreadCount > 99 ? "99+" : inboxUnreadCount}
@@ -1310,6 +1317,7 @@ const InboxButton = memo(function InboxButton() {
 
 // Isolated Automations Button - full-width navigation link matching web layout
 const AutomationsButton = memo(function AutomationsButton() {
+  const { t } = useTranslation("sidebar")
   const automationsEnabled = useAtomValue(betaAutomationsEnabledAtom)
 
   const handleClick = useCallback(() => {
@@ -1328,7 +1336,7 @@ const AutomationsButton = memo(function AutomationsButton() {
       )}
     >
       <SidebarAutomationsIcon className="h-4 w-4" />
-      <span className="flex-1 text-left">Automations</span>
+      <span className="flex-1 text-left">{t("navigation.automations")}</span>
       <ArrowUpRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
     </button>
   )
@@ -1341,6 +1349,7 @@ interface ArchiveSectionProps {
 }
 
 const ArchiveSection = memo(function ArchiveSection({ archivedChatsCount }: ArchiveSectionProps) {
+  const { t } = useTranslation("sidebar")
   const archivePopoverOpen = useAtomValue(archivePopoverOpenAtom)
   const [blockArchiveTooltip, setBlockArchiveTooltip] = useState(false)
   const prevArchivePopoverOpen = useRef(false)
@@ -1372,7 +1381,7 @@ const ArchiveSection = memo(function ArchiveSection({ archivedChatsCount }: Arch
           />
         </div>
       </TooltipTrigger>
-      <TooltipContent>Archive</TooltipContent>
+      <TooltipContent>{t("tooltips.archive")}</TooltipContent>
     </Tooltip>
   )
 })
@@ -1410,6 +1419,7 @@ const SidebarHeader = memo(function SidebarHeader({
   handleSidebarMouseLeave,
   closeButtonRef,
 }: SidebarHeaderProps) {
+  const { t } = useTranslation(["sidebar", "settings"])
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
   const toggleSidebarHotkey = useResolvedHotkeyDisplay("toggle-sidebar")
@@ -1461,13 +1471,13 @@ const SidebarHeader = memo(function SidebarHeader({
                 onClick={onToggleSidebar}
                 tabIndex={-1}
                 className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
-                aria-label="Close sidebar"
+                aria-label={t("sidebar:aria.closeSidebar")}
               >
                 <IconDoubleChevronLeft className="h-4 w-4" />
               </ButtonCustom>
             </TooltipTrigger>
             <TooltipContent>
-              Close sidebar
+              {t("sidebar:tooltips.closeSidebar")}
               {toggleSidebarHotkey && <Kbd>{toggleSidebarHotkey}</Kbd>}
             </TooltipContent>
           </Tooltip>
@@ -1533,7 +1543,7 @@ const SidebarHeader = memo(function SidebarHeader({
                           </div>
                           <div className="flex-1 min-w-0 overflow-hidden">
                             <div className="font-medium text-sm text-foreground truncate">
-                              {desktopUser?.name || "User"}
+                              {desktopUser?.name || t("sidebar:account.user")}
                             </div>
                             <div className="text-xs text-muted-foreground truncate">
                               {desktopUser?.email}
@@ -1553,14 +1563,14 @@ const SidebarHeader = memo(function SidebarHeader({
                       }}
                     >
                       <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                      Settings
+                      {t("settings:title")}
                     </DropdownMenuItem>
 
                     {/* Help Submenu */}
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger className="gap-2">
                         <QuestionCircleIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="flex-1">Help</span>
+                        <span className="flex-1">{t("sidebar:help.title")}</span>
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent
                         className="w-36"
@@ -1578,7 +1588,7 @@ const SidebarHeader = memo(function SidebarHeader({
                           className="gap-2"
                         >
                           <DiscordIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                          <span className="flex-1">Discord</span>
+                          <span className="flex-1">{t("sidebar:help.discord")}</span>
                         </DropdownMenuItem>
                         {!isMobileFullscreen && (
                           <DropdownMenuItem
@@ -1590,7 +1600,7 @@ const SidebarHeader = memo(function SidebarHeader({
                             className="gap-2"
                           >
                             <KeyboardIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="flex-1">Shortcuts</span>
+                            <span className="flex-1">{t("sidebar:help.shortcuts")}</span>
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuSubContent>
@@ -1635,7 +1645,7 @@ const SidebarHeader = memo(function SidebarHeader({
                             strokeLinejoin="round"
                           />
                         </svg>
-                        Log out
+                        {t("sidebar:account.logout")}
                       </DropdownMenuItem>
                     </div>
                   </>
@@ -1651,7 +1661,7 @@ const SidebarHeader = memo(function SidebarHeader({
                         }}
                       >
                         <ProfileIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                        Login
+                        {t("sidebar:account.login")}
                       </DropdownMenuItem>
                     </div>
 
@@ -1661,7 +1671,7 @@ const SidebarHeader = memo(function SidebarHeader({
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger className="gap-2">
                         <QuestionCircleIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="flex-1">Help</span>
+                        <span className="flex-1">{t("sidebar:help.title")}</span>
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent
                         className="w-36"
@@ -1679,7 +1689,7 @@ const SidebarHeader = memo(function SidebarHeader({
                           className="gap-2"
                         >
                           <DiscordIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                          <span className="flex-1">Discord</span>
+                          <span className="flex-1">{t("sidebar:help.discord")}</span>
                         </DropdownMenuItem>
                         {!isMobileFullscreen && (
                           <DropdownMenuItem
@@ -1691,7 +1701,7 @@ const SidebarHeader = memo(function SidebarHeader({
                             className="gap-2"
                           >
                             <KeyboardIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="flex-1">Shortcuts</span>
+                            <span className="flex-1">{t("sidebar:help.shortcuts")}</span>
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuSubContent>
@@ -1714,6 +1724,7 @@ interface HelpSectionProps {
 }
 
 const HelpSection = memo(function HelpSection({ isMobile }: HelpSectionProps) {
+  const { t } = useTranslation("sidebar")
   const [helpPopoverOpen, setHelpPopoverOpen] = useAtom(agentsHelpPopoverOpenAtom)
   const [blockHelpTooltip, setBlockHelpTooltip] = useState(false)
   const prevHelpPopoverOpen = useRef(false)
@@ -1754,7 +1765,7 @@ const HelpSection = memo(function HelpSection({ isMobile }: HelpSectionProps) {
           </AgentsHelpPopover>
         </div>
       </TooltipTrigger>
-      <TooltipContent>Help</TooltipContent>
+      <TooltipContent>{t("tooltips.help")}</TooltipContent>
     </Tooltip>
   )
 })
@@ -1772,6 +1783,7 @@ export function AgentsSidebar({
   isMobileFullscreen = false,
   onChatSelect,
 }: AgentsSidebarProps) {
+  const { t } = useTranslation(["sidebar", "common"])
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
   const [selectedChatIsRemote, setSelectedChatIsRemote] = useAtom(selectedChatIsRemoteAtom)
   const previousChatId = useAtomValue(previousAgentChatIdAtom)
@@ -3223,7 +3235,7 @@ export function AgentsSidebar({
           <div className="relative">
             <Input
               ref={searchInputRef}
-              placeholder="Search workspaces..."
+              placeholder={t("sidebar:search.placeholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -3288,15 +3300,15 @@ export function AgentsSidebar({
                   isMobileFullscreen ? "h-10" : "h-7",
                 )}
               >
-                <span className="text-sm font-medium">New Workspace</span>
+                <span className="text-sm font-medium">{t("sidebar:actions.newWorkspace")}</span>
               </ButtonCustom>
             </TooltipTrigger>
             <TooltipContent side="right" className="flex flex-col items-start gap-1">
-              <span>Start a new workspace</span>
+              <span>{t("sidebar:actions.startNewWorkspace")}</span>
               {newWorkspaceHotkey && (
                 <span className="flex items-center gap-1.5">
                   <Kbd>{newWorkspaceHotkey}</Kbd>
-                  {newWorkspaceAltHotkey && <><span className="text-[10px] opacity-50">or</span><Kbd>{newWorkspaceAltHotkey}</Kbd></>}
+                  {newWorkspaceAltHotkey && <><span className="text-[10px] opacity-50">{t("sidebar:labels.or")}</span><Kbd>{newWorkspaceAltHotkey}</Kbd></>}
                 </span>
               )}
             </TooltipContent>
@@ -3330,7 +3342,7 @@ export function AgentsSidebar({
                 )}
               >
                 <h3 className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                  Drafts
+                  {t("sidebar:sections.drafts")}
                 </h3>
               </div>
               <div className="list-none p-0 m-0">
@@ -3362,7 +3374,7 @@ export function AgentsSidebar({
             <div className={cn("mb-4", isMultiSelectMode ? "px-0" : "-mx-1")}>
               {/* Pinned section */}
               <ChatListSection
-                title="Pinned workspaces"
+                title={t("sidebar:sections.pinnedWorkspaces")}
                 chats={pinnedAgents}
                 selectedChatId={selectedChatId}
                 selectedChatIsRemote={selectedChatIsRemote}
@@ -3406,7 +3418,7 @@ export function AgentsSidebar({
 
               {/* Unpinned section */}
               <ChatListSection
-                title={pinnedAgents.length > 0 ? "Recent workspaces" : "Workspaces"}
+                title={pinnedAgents.length > 0 ? t("sidebar:sections.recentWorkspaces") : t("sidebar:sections.workspaces")}
                 chats={unpinnedAgents}
                 selectedChatId={selectedChatId}
                 selectedChatIsRemote={selectedChatIsRemote}
@@ -3482,13 +3494,13 @@ export function AgentsSidebar({
             {/* Selection info */}
             <div className="flex items-center justify-between px-1">
               <span className="text-xs text-muted-foreground">
-                {selectedChatsCount} selected
+                {t("sidebar:selection.selectedCount", { count: selectedChatsCount })}
               </span>
               <button
                 onClick={clearChatSelection}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
-                Cancel
+                {t("common:buttons.cancel")}
               </button>
             </div>
 
@@ -3503,8 +3515,8 @@ export function AgentsSidebar({
               >
                 <ArchiveIcon className="h-3.5 w-3.5" />
                 {archiveChatsBatchMutation.isPending
-                  ? "Archiving..."
-                  : "Archive"}
+                  ? t("sidebar:selection.archiving")
+                  : t("common:buttons.archive")}
               </Button>
             </div>
           </motion.div>
@@ -3536,7 +3548,7 @@ export function AgentsSidebar({
                       <SettingsIcon className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Settings{settingsHotkey && <> <Kbd>{settingsHotkey}</Kbd></>}</TooltipContent>
+                  <TooltipContent>{t("common:aria.settings")}{settingsHotkey && <> <Kbd>{settingsHotkey}</Kbd></>}</TooltipContent>
                 </Tooltip>
 
                 {/* Help Button - isolated component to prevent sidebar re-renders */}
@@ -3562,7 +3574,7 @@ export function AgentsSidebar({
                 isMobileFullscreen ? "h-10" : "h-7",
               )}
             >
-              <span className="text-sm font-medium">Feedback</span>
+              <span className="text-sm font-medium">{t("sidebar:actions.feedback")}</span>
             </ButtonCustom>
           </motion.div>
         )}

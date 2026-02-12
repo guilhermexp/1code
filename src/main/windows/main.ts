@@ -651,7 +651,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string; sp
     // Local dev servers (Next.js, Vite, etc.) set restrictive CSPs that block
     // external auth providers (Clerk, Auth0, Firebase) from framing their domains.
     // Since these are the user's own dev servers, we replace with a fully permissive CSP.
-    const PERMISSIVE_CSP = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; connect-src * ws: wss:; frame-src *; child-src * blob:; worker-src * blob:"
+    const PERMISSIVE_CSP = "default-src * 'unsafe-inline' data: blob:; script-src * 'unsafe-inline' 'wasm-unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; connect-src * ws: wss:; frame-src *; child-src * blob:; worker-src * blob:"
 
     if (isLocalhost) {
       // Replace any existing CSP with permissive one for localhost

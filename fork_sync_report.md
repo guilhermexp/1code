@@ -1,86 +1,112 @@
 # Fork Sync Report
 
 ## Execution
-- Timestamp (UTC): 2026-02-08T21:16:33Z
+- Timestamp (UTC): 2026-02-12T03:06:47Z
 - Repository: /Users/guilhermevarela/Documents/Projetos/1code
 - Branch: main
-- Head before: df1aff2
-- Head after: df1aff2
+- Head before: 6ab0ee9
+- Head after: 14cc7e3
 - Upstream base: upstream/main
-- Upstream head synced: 0d773a1
+- Upstream head synced: aad4b92
 - Previous synced upstream commit (from changelog): 0d773a1
-- Merge status: no-upstream-updates
+- Merge status: merged
 - Working tree: dirty
 
 ## Current Situation
-- Private commits vs upstream: 50
-- Upstream commits detected: 0
+- Private commits vs upstream: 60
+- Upstream commits detected: 4
+- Upstream files changed: 51
 - Conflicts auto-resolved with local priority: 0
 - Protected path files reapplied from local HEAD: 0
 
 ## New From Upstream
-- No new upstream commits detected in this run.
+- aad4b92 Release v0.0.60-beta.4
+- 09a6880 Release v0.0.60-beta.3
+- 8c86d39 Release v0.0.60-beta.2
+- a2b0184 Release v0.0.60-beta.1
+- Files touched by upstream commits (sample):
+  - bun.lock
+  - bun.lockb
+  - package.json
+  - src/main/lib/claude/transform.ts
+  - src/main/lib/claude/types.ts
+  - src/main/lib/fs/dirent.ts
+  - src/main/lib/plugins/index.ts
+  - src/main/lib/trpc/routers/agent-utils.ts
+  - src/main/lib/trpc/routers/commands.ts
+  - src/main/lib/trpc/routers/plugins.ts
+  - src/main/lib/trpc/routers/skills.ts
+  - src/main/windows/main.ts
+  - src/preload/index.ts
+  - src/renderer/App.tsx
+  - src/renderer/components/dialogs/settings-tabs/agents-beta-tab.tsx
+  - src/renderer/components/dialogs/settings-tabs/agents-preferences-tab.tsx
+  - src/renderer/contexts/WindowContext.tsx
+  - src/renderer/features/agents/atoms/index.ts
+  - src/renderer/features/agents/components/agents-help-popover.tsx
+  - src/renderer/features/agents/hooks/use-desktop-notifications.ts
+  - src/renderer/features/agents/lib/agents-hotkeys-manager.ts
+  - src/renderer/features/agents/lib/queue-utils.ts
+  - src/renderer/features/agents/main/active-chat.tsx
+  - src/renderer/features/agents/main/assistant-message-item.tsx
+  - src/renderer/features/agents/main/chat-input-area.tsx
+  - src/renderer/features/agents/main/chat-render-flags.ts
+  - src/renderer/features/agents/main/isolated-message-group.tsx
+  - src/renderer/features/agents/main/isolated-messages-section.tsx
+  - src/renderer/features/agents/main/messages-list.tsx
+  - src/renderer/features/agents/main/new-chat-form.tsx
+  - src/renderer/features/agents/mentions/render-file-mentions.tsx
+  - src/renderer/features/agents/stores/message-store.ts
+  - src/renderer/features/agents/stores/sub-chat-store.ts
+  - src/renderer/features/agents/ui/agent-context-indicator.tsx
+  - src/renderer/features/agents/ui/agent-diff-text-context-item.tsx
+  - src/renderer/features/agents/ui/agent-file-item.tsx
+  - src/renderer/features/agents/ui/agent-image-item.tsx
+  - src/renderer/features/agents/ui/agent-pasted-text-item.tsx
+  - src/renderer/features/agents/ui/agent-plan-sidebar.tsx
+  - src/renderer/features/agents/ui/agent-queue-indicator.tsx
+  - src/renderer/features/agents/ui/agent-text-context-item.tsx
+  - src/renderer/features/agents/ui/agent-user-message-bubble.tsx
+  - src/renderer/features/agents/ui/git-activity-badges.tsx
+  - src/renderer/features/agents/ui/split-view-container.tsx
+  - src/renderer/features/agents/ui/sub-chat-context-menu.tsx
+  - src/renderer/features/agents/ui/sub-chat-selector.tsx
+  - src/renderer/features/agents/utils/git-activity.ts
+  - src/renderer/features/sidebar/agents-subchats-sidebar.tsx
+  - src/renderer/lib/atoms/index.ts
+  - src/renderer/lib/hotkeys/shortcut-registry.ts
+  - src/renderer/lib/hotkeys/types.ts
+
+## Upstream Impact Analysis
+- Dependencies/build changed: refresh dependencies and validate install/build pipeline.
 
 ## Expected Result
-- Repositorio ja estava atualizado com upstream; apenas rastreabilidade no changelog e relatorio.
+- Atualizacoes do upstream integradas com prioridade local; customizacoes privadas e caminhos protegidos preservados.
 
 ## App Test Validation
-- Test status: passed
-- Test exit code: 0
+- Validation plan:
+  - bun run ts:check
+  - bun run build
+- Executed commands:
+  - bun run ts:check
+- Test status: failed
+- Test exit code: 127
+- Failed command: bun run ts:check
 - Test log file: fork_sync_report.tests.log
 
 ### Test Log Tail
-    ../../out/renderer/assets/blade-BbshwpY9.js                            108.11 kB
-    ../../out/renderer/assets/php-C2HieitX.js                              111.16 kB
-    ../../out/renderer/assets/php-MFPM0Lyf.js                              113.86 kB
-    ../../out/renderer/assets/c4Diagram-YG6GDRKO-DSClgbl_.js               118.61 kB
-    ../../out/renderer/assets/ganttDiagram-JELNMOA3-IdaK2Bwl.js            131.53 kB
-    ../../out/renderer/assets/asciidoc-DAaa-hb3.js                         131.55 kB
-    ../../out/renderer/assets/blockDiagram-VD42YOAC-CxLb8-9A.js            134.23 kB
-    ../../out/renderer/assets/mdx-D5wExp-O.js                              136.15 kB
-    ../../out/renderer/assets/mdx-DhdCaiJK.js                              140.39 kB
-    ../../out/renderer/assets/sequenceDiagram-WL72ISMW-BkrGv_Gr.js         168.91 kB
-    ../../out/renderer/assets/objective-cpp-DEoN9Fe5.js                    172.02 kB
-    ../../out/renderer/assets/javascript-BsAkV7mL.js                       174.87 kB
-    ../../out/renderer/assets/tsx-CmGGo4Hm.js                              175.57 kB
-    ../../out/renderer/assets/objective-cpp-B5zsQG5b.js                    175.65 kB
-    ../../out/renderer/assets/jsx-BPmvoin2.js                              177.82 kB
-    ../../out/renderer/assets/typescript-CP6ECzON.js                       181.13 kB
-    ../../out/renderer/assets/angular-ts-BftcHvZ6.js                       184.25 kB
-    ../../out/renderer/assets/vue-vine-rMIwOpFf.js                         190.18 kB
-    ../../out/renderer/assets/javascript---YAZjZr.js                       198.08 kB
-    ../../out/renderer/assets/tsx-g9TWnIBq.js                              198.78 kB
-    ../../out/renderer/assets/jsx-aB-Qxqiu.js                              201.04 kB
-    ../../out/renderer/assets/typescript-C9ZOif7x.js                       209.07 kB
-    ../../out/renderer/assets/angular-ts-DO7J7tSu.js                       212.21 kB
-    ../../out/renderer/assets/cose-bilkent-S5V4N54A-CPn_AK7O.js            214.63 kB
-    ../../out/renderer/assets/wolfram-CRmjUoI4.js                          262.43 kB
-    ../../out/renderer/assets/wolfram-D7T5npsH.js                          268.63 kB
-    ../../out/renderer/assets/architectureDiagram-VXUJARFQ-CorSF129.js     417.41 kB
-    ../../out/renderer/assets/katex-DK1nL-FM.js                            488.97 kB
-    ../../out/renderer/assets/wasm-DDgzZJey.js                             622.45 kB
-    ../../out/renderer/assets/wasm-C2YmWXwq.js                             622.45 kB
-    ../../out/renderer/assets/cpp-zh2ePAE_.js                              626.22 kB
-    ../../out/renderer/assets/cpp-w0Dab7sL.js                              697.65 kB
-    ../../out/renderer/assets/treemap-KMMF4GRG-wxHQRrAd.js                 751.47 kB
-    ../../out/renderer/assets/emacs-lisp-4gdXY_g3.js                       779.90 kB
-    ../../out/renderer/assets/emacs-lisp-DKZV9Ndz.js                       804.72 kB
-    ../../out/renderer/assets/mermaid.core-BRzIfnOc.js                     885.70 kB
-    ../../out/renderer/assets/index-3p_o1BHC.js                            929.90 kB
-    ../../out/renderer/assets/cytoscape.esm-DGeaJFcL.js                    956.91 kB
-    ../../out/renderer/assets/index-BlBqE5rh.js                         15,257.56 kB
-    ✓ built in 55.78s
+    === Validation step 1 ===
+    Command: bun run ts:check
+    
+    $ tsgo --noEmit
+    /bin/bash: tsgo: command not found
+    error: script "ts:check" exited with code 127
 
 ## Origin Publish
 - Origin remote: origin
 - Push enabled: true
-- Push status: pushed
+- Push status: skipped-tests-failed
 - Push exit code: 0
-- Sync before push: local-ahead:2 remote-ahead:0
-- Sync after push: local-ahead:0 remote-ahead:0
-- Push log file: fork_sync_report.push.log
-
-### Push Log Tail
-    To https://github.com/guilhermexp/1code.git
-       0564369..df1aff2  HEAD -> main
+- Sync before push: unknown
+- Sync after push: unknown
 

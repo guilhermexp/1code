@@ -25,6 +25,17 @@ export function getDefaultTerminalBg(isDark = true): string {
  */
 function loadRenderer(xterm: XTerm): { dispose: () => void } {
   let renderer: WebglAddon | CanvasAddon | null = null
+  const core = xterm as unknown as {
+    _core?: { _coreBrowserService?: { mainDocument?: Document; document?: Document } }
+  }
+  const browserDocument = core._core?._coreBrowserService?.mainDocument ?? core._core?._coreBrowserService?.document
+
+  if (!browserDocument || typeof browserDocument.createElement !== "function") {
+    console.log("[Terminal:loadRenderer] Skipping WebGL/Canvas (browser document unavailable)")
+    return {
+      dispose: () => {},
+    }
+  }
 
   console.log("[Terminal:loadRenderer] Attempting to load WebGL addon...")
 

@@ -1,1 +1,24 @@
-{}
+{
+  "header": {
+    "forkLocally": "Fork Locally",
+    "continueSessionLocally": "Continue this session in a local workspace",
+    "openPreview": "Open Preview",
+    "previewUnavailable": "Preview unavailable",
+    "viewDetails": "View Details",
+    "openTerminal": "Open Terminal",
+    "restoreWorkspace": "Restore Workspace"
+  },
+  "input": {
+    "placeholder": "Loading chat...",
+    "agentMode": "Agent",
+    "customModel": "Custom model",
+    "sonnet": "Sonnet",
+    "newChat": "New Chat"
+  },
+  "scroll": {
+    "scrollToBottom": "Scroll to bottom"
+  },
+  "diff": {
+    "changes": "Changes"
+  }
+}

@@ -1,1 +1,24 @@
-{}
+{
+  "header": {
+    "forkLocally": "Forkar localmente",
+    "continueSessionLocally": "Continuar esta sessão em um workspace local",
+    "openPreview": "Abrir prévia",
+    "previewUnavailable": "Prévia indisponível",
+    "viewDetails": "Ver detalhes",
+    "openTerminal": "Abrir terminal",
+    "restoreWorkspace": "Restaurar workspace"
+  },
+  "input": {
+    "placeholder": "Carregando chat...",
+    "agentMode": "Agente",
+    "customModel": "Modelo personalizado",
+    "sonnet": "Sonnet",
+    "newChat": "Novo chat"
+  },
+  "scroll": {
+    "scrollToBottom": "Rolar para baixo"
+  },
+  "diff": {
+    "changes": "Alterações"
+  }
+}

@@ -1,1 +1,83 @@
-{}
+{
+  "search": {
+    "placeholder": "Search workspaces..."
+  },
+  "actions": {
+    "newWorkspace": "New Workspace",
+    "startNewWorkspace": "Start a new workspace",
+    "feedback": "Feedback"
+  },
+  "sections": {
+    "drafts": "Drafts",
+    "pinnedWorkspaces": "Pinned Workspaces",
+    "recentWorkspaces": "Recent Workspaces",
+    "workspaces": "Workspaces"
+  },
+  "selection": {
+    "selectedCount_one": "{{count}} selected",
+    "selectedCount_other": "{{count}} selected",
+    "archiving": "Archiving..."
+  },
+  "items": {
+    "draft": "Draft",
+    "newWorkspacePlaceholder": "New workspace"
+  },
+  "navigation": {
+    "inbox": "Inbox",
+    "automations": "Automations"
+  },
+  "help": {
+    "title": "Help",
+    "discord": "Discord",
+    "shortcuts": "Shortcuts"
+  },
+  "account": {
+    "user": "User",
+    "login": "Login",
+    "logout": "Log out"
+  },
+  "kanban": {
+    "view": "Kanban View"
+  },
+  "labels": {
+    "or": "or",
+    "remoteProject": "Remote project",
+    "localProject": "Local project",
+    "unknownProject": "Unknown project"
+  },
+  "tooltips": {
+    "archive": "Archive",
+    "help": "Help",
+    "closeSidebar": "Close sidebar"
+  },
+  "aria": {
+    "deleteDraft": "Delete draft",
+    "archiveWorkspace": "Archive workspace",
+    "closeSidebar": "Close sidebar"
+  },
+  "context": {
+    "pinSelected_one": "Pin {{count}} workspace",
+    "pinSelected_other": "Pin {{count}} workspaces",
+    "unpinSelected_one": "Unpin {{count}} workspace",
+    "unpinSelected_other": "Unpin {{count}} workspaces",
+    "archiveSelected_one": "Archive {{count}} workspace",
+    "archiveSelected_other": "Archive {{count}} workspaces",
+    "archivingSelected": "Archiving...",
+    "forkLocally": "Fork Locally",
+    "pinWorkspace": "Pin workspace",
+    "unpinWorkspace": "Unpin workspace",
+    "renameWorkspace": "Rename workspace",
+    "copyBranchName": "Copy branch name",
+    "exportWorkspace": "Export workspace",
+    "downloadAsMarkdown": "Download as Markdown",
+    "downloadAsJson": "Download as JSON",
+    "downloadAsText": "Download as Text",
+    "copyAsMarkdown": "Copy as Markdown",
+    "copyAsJson": "Copy as JSON",
+    "copyAsText": "Copy as Text",
+    "openInNewWindow": "Open in new window",
+    "archiveWorkspace": "Archive workspace",
+    "archiveAllBelow": "Archive all below",
+    "archiveOthers": "Archive others"
+  }
+}

@@ -1,7 +1,7 @@
 "use client"
 
 import { useAtomValue } from "jotai"
-import { forwardRef, memo, useLayoutEffect, useState } from "react"
+import { forwardRef, memo } from "react"
 import { Virtuoso, type FollowOutput, type VirtuosoHandle } from "react-virtuoso"
 import { currentSubChatIdAtom, userMessageIdsPerChatAtom } from "../stores/message-store"
 import { USE_VIRTUOSO_CHAT, VIRTUOSO_FOLLOW_BOTTOM_THRESHOLD_PX } from "./chat-render-flags"
@@ -178,18 +178,6 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
   const hasVirtuosoData = userMsgIds.length > 0
   const shouldDelayVirtuosoMount = useVirtuosoChat && !hasVirtuosoData
 
-  // Initialize from ref immediately — the scroll parent (chat container div) is
-  // already in the DOM before this component mounts.  Avoids an extra render
-  // cycle where Virtuoso would first create an internal scroller (null parent)
-  // then switch to the external one, which is the most expensive part of init.
-  const [scrollParentEl, setScrollParentEl] = useState<HTMLElement | null>(
-    () => scrollParentRef?.current ?? null
-  )
-  useLayoutEffect(() => {
-    const nextEl = scrollParentRef?.current ?? null
-    setScrollParentEl((prev) => (nextEl && nextEl !== prev ? nextEl : prev))
-  }, [scrollParentRef])
-
   if (!useVirtuosoChat) {
     // Non-Virtuoso path: guard against stale data from other sub-chats
     if (!shouldRenderForSubChat) return null
@@ -228,14 +216,11 @@ export const IsolatedMessagesSection = memo(function IsolatedMessagesSection({
     <Virtuoso
       data={userMsgIds}
       computeItemKey={(_, userMsgId) => userMsgId}
-      customScrollParent={scrollParentEl ?? undefined}
       followOutput={shouldRenderForSubChat ? followOutput : false}
-      atBottomStateChange={onAtBottomStateChange}
       atBottomThreshold={VIRTUOSO_FOLLOW_BOTTOM_THRESHOLD_PX}
       initialTopMostItemIndex={
         userMsgIds.length > 0 ? { index: "LAST", align: "end" } : undefined
       }
-      ref={virtuosoRef}
       style={{ height: "100%", width: "100%" }}
       increaseViewportBy={{ top: 300, bottom: 300 }}
       defaultItemHeight={38}

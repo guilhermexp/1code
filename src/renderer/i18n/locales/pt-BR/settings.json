@@ -1,5 +1,8 @@
 {
   "title": "Configurações",
+  "sidebar": {
+    "back": "Voltar"
+  },
   "tabs": {
     "profile": {
       "label": "Conta",
@@ -17,6 +20,22 @@
       "label": "Idioma",
       "description": "Configurações de idioma do aplicativo"
     },
+    "keyboard": {
+      "label": "Teclado",
+      "description": "Atalhos e teclas de atalho"
+    },
+    "beta": {
+      "label": "Beta",
+      "description": "Recursos experimentais"
+    },
+    "projects": {
+      "label": "Projetos",
+      "description": "Configurações de projetos e worktrees"
+    },
+    "models": {
+      "label": "Modelos",
+      "description": "Configurações de modelos e provedores"
+    },
     "skills": {
       "label": "Habilidades",
       "description": "Habilidades customizadas do Claude"
@@ -28,6 +47,10 @@
     "mcp": {
       "label": "Servidores MCP",
       "description": "Servidores do Model Context Protocol"
+    },
+    "plugins": {
+      "label": "Plugins",
+      "description": "Gerenciar plugins"
     },
     "debug": {
       "label": "Debug",
@@ -49,9 +72,27 @@
       "description": "Ativar raciocínio mais profundo com mais tokens de pensamento (usa mais créditos).",
       "note": "Desabilita streaming de resposta."
     },
+    "defaultMode": {
+      "label": "Modo Padrão",
+      "description": "Modo para novos agentes (Plan = somente leitura, Agent = pode editar)",
+      "agent": "Agent",
+      "plan": "Plan"
+    },
+    "coAuthoredBy": {
+      "label": "Incluir Co-Authored-By",
+      "description": "Adicionar \"Co-authored-by: Claude\" aos commits git feitos pelo Claude"
+    },
+    "desktopNotifications": {
+      "label": "Notificações do Desktop",
+      "description": "Mostrar notificações do sistema quando o agente precisar de entrada ou concluir trabalho"
+    },
     "soundNotifications": {
       "label": "Notificações Sonoras",
       "description": "Reproduzir um som quando o agente concluir trabalho enquanto você estiver ausente"
+    },
+    "notifyWhenFocused": {
+      "label": "Notificar Quando em Foco",
+      "description": "Mostrar notificações mesmo quando a janela do aplicativo estiver ativa"
     },
     "quickSwitch": {
       "label": "Troca Rápida",
@@ -59,12 +100,27 @@
       "workspaces": "Workspaces",
       "agents": "Agentes"
     },
+    "autoAdvance": {
+      "label": "Avanço automático",
+      "description": "Para onde ir após arquivar um workspace",
+      "next": "Ir para o próximo workspace",
+      "previous": "Ir para o workspace anterior",
+      "close": "Fechar workspace"
+    },
+    "preferredEditor": {
+      "label": "Editor Preferido",
+      "description": "Aplicativo padrão para abrir workspaces",
+      "groups": {
+        "vscode": "VS Code",
+        "jetbrains": "JetBrains"
+      }
+    },
     "privacy": {
       "title": "Privacidade",
       "subtitle": "Controle quais dados você compartilha conosco",
       "analytics": {
         "label": "Compartilhar Análises de Uso",
-        "description": "Nos ajude a melhorar o Agents compartilhando dados de uso anônimos. Rastreamos apenas uso de recursos e desempenho do app–nunca seu código, prompts ou mensagens. Sem treinamento de IA com seus dados."
+        "description": "Nos ajude a melhorar o Agents compartilhando dados de uso anônimos. Rastreamos apenas uso de recursos e desempenho do app-nunca seu código, prompts ou mensagens. Sem treinamento de IA com seus dados."
       }
     }
   }

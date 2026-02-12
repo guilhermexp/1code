@@ -1,5 +1,8 @@
 {
   "title": "Settings",
+  "sidebar": {
+    "back": "Back"
+  },
   "tabs": {
     "profile": {
       "label": "Account",
@@ -17,6 +20,22 @@
       "label": "Language",
       "description": "Application language settings"
     },
+    "keyboard": {
+      "label": "Keyboard",
+      "description": "Keyboard shortcuts and keybindings"
+    },
+    "beta": {
+      "label": "Beta",
+      "description": "Experimental features"
+    },
+    "projects": {
+      "label": "Projects",
+      "description": "Project and worktree settings"
+    },
+    "models": {
+      "label": "Models",
+      "description": "Model and provider settings"
+    },
     "skills": {
       "label": "Skills",
       "description": "Custom Claude skills"
@@ -28,6 +47,10 @@
     "mcp": {
       "label": "MCP Servers",
       "description": "Model Context Protocol servers"
+    },
+    "plugins": {
+      "label": "Plugins",
+      "description": "Manage plugins"
     },
     "debug": {
       "label": "Debug",
@@ -49,9 +72,27 @@
       "description": "Enable deeper reasoning with more thinking tokens (uses more credits).",
       "note": "Disables response streaming."
     },
+    "defaultMode": {
+      "label": "Default Mode",
+      "description": "Mode for new agents (Plan = read-only, Agent = can edit)",
+      "agent": "Agent",
+      "plan": "Plan"
+    },
+    "coAuthoredBy": {
+      "label": "Include Co-Authored-By",
+      "description": "Add \"Co-authored-by: Claude\" to git commits made by Claude"
+    },
+    "desktopNotifications": {
+      "label": "Desktop Notifications",
+      "description": "Show system notifications when agent needs input or completes work"
+    },
     "soundNotifications": {
       "label": "Sound Notifications",
       "description": "Play a sound when agent completes work while you're away"
+    },
+    "notifyWhenFocused": {
+      "label": "Notify When Focused",
+      "description": "Show notifications even when the app window is active"
     },
     "quickSwitch": {
       "label": "Quick Switch",
@@ -59,12 +100,27 @@
       "workspaces": "Workspaces",
       "agents": "Agents"
     },
+    "autoAdvance": {
+      "label": "Auto-advance",
+      "description": "Where to go after archiving a workspace",
+      "next": "Go to next workspace",
+      "previous": "Go to previous workspace",
+      "close": "Close workspace"
+    },
+    "preferredEditor": {
+      "label": "Preferred Editor",
+      "description": "Default app for opening workspaces",
+      "groups": {
+        "vscode": "VS Code",
+        "jetbrains": "JetBrains"
+      }
+    },
     "privacy": {
       "title": "Privacy",
       "subtitle": "Control what data you share with us",
       "analytics": {
         "label": "Share Usage Analytics",
-        "description": "Help us improve Agents by sharing anonymous usage data. We only track feature usage and app performance–never your code, prompts, or messages. No AI training on your data."
+        "description": "Help us improve Agents by sharing anonymous usage data. We only track feature usage and app performance-never your code, prompts, or messages. No AI training on your data."
       }
     }
   }

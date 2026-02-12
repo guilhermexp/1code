@@ -1,6 +1,7 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { ChevronLeft } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useTranslation } from "react-i18next"
 import {
   EyeOpenFilledIcon,
   GlobeIcon,
@@ -37,32 +38,26 @@ const DEVTOOLS_UNLOCK_CLICKS = 5
 const MAIN_TABS = [
   {
     id: "preferences" as SettingsTab,
-    label: "Preferences",
     icon: SlidersFilledIcon,
   },
   {
     id: "profile" as SettingsTab,
-    label: "Account",
     icon: ProfileIconFilled,
   },
   {
     id: "appearance" as SettingsTab,
-    label: "Appearance",
     icon: EyeOpenFilledIcon,
   },
   {
     id: "language" as SettingsTab,
-    label: "Language",
     icon: GlobeIcon,
   },
   {
     id: "keyboard" as SettingsTab,
-    label: "Keyboard",
     icon: KeyboardFilledIcon,
   },
   {
     id: "beta" as SettingsTab,
-    label: "Beta",
     icon: FlaskFilledIcon,
   },
 ]
@@ -71,32 +66,26 @@ const MAIN_TABS = [
 const ADVANCED_TABS_BASE = [
   {
     id: "projects" as SettingsTab,
-    label: "Projects",
     icon: FolderFilledIcon,
   },
   {
     id: "models" as SettingsTab,
-    label: "Models",
     icon: BrainFilledIcon,
   },
   {
     id: "skills" as SettingsTab,
-    label: "Skills",
     icon: SkillIconFilled,
   },
   {
     id: "agents" as SettingsTab,
-    label: "Custom Agents",
     icon: CustomAgentIconFilled,
   },
   {
     id: "mcp" as SettingsTab,
-    label: "MCP Servers",
     icon: OriginalMCPIcon,
   },
   {
     id: "plugins" as SettingsTab,
-    label: "Plugins",
     icon: PluginFilledIcon,
   },
 ]
@@ -104,14 +93,12 @@ const ADVANCED_TABS_BASE = [
 // Debug tab definition
 const DEBUG_TAB = {
   id: "debug" as SettingsTab,
-  label: "Debug",
   icon: BugFilledIcon,
 }
 
 interface TabButtonProps {
   tab: {
     id: SettingsTab
-    label: string
     icon: React.ComponentType<{ className?: string }> | any
   }
   isActive: boolean
@@ -121,6 +108,8 @@ interface TabButtonProps {
 function TabButton({ tab, isActive, onClick }: TabButtonProps) {
   const Icon = tab.icon
   const isProjectTab = "projectId" in tab
+  const { t } = useTranslation("settings")
+  const label = t(`tabs.${tab.id}.label`)
 
   return (
     <button
@@ -139,12 +128,13 @@ function TabButton({ tab, isActive, onClick }: TabButtonProps) {
           isProjectTab ? "opacity-100" : isActive ? "opacity-100" : "opacity-50"
         )}
       />
-      <span className="flex-1 truncate">{tab.label}</span>
+      <span className="flex-1 truncate">{label}</span>
     </button>
   )
 }
 
 export function SettingsSidebar() {
+  const { t } = useTranslation("settings")
   const [activeTab, setActiveTab] = useAtom(agentsSettingsDialogActiveTabAtom)
   const [devToolsUnlocked, setDevToolsUnlocked] = useAtom(devToolsUnlockedAtom)
   const setDesktopView = useSetAtom(desktopViewAtom)
@@ -201,7 +191,7 @@ export function SettingsSidebar() {
           className="inline-flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm h-7 rounded-md text-muted-foreground hover:text-foreground font-medium transition-colors cursor-pointer"
         >
           <ChevronLeft className="h-4 w-4" />
-          <span>Back</span>
+          <span>{t("sidebar.back")}</span>
         </button>
       </div>
 

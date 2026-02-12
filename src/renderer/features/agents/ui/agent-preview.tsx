@@ -755,6 +755,11 @@ export function AgentPreview({
                   try {
                     api.setOptions({
                       theme: {
+                        // Keep inspector visuals subtle in preview.
+                        selectionBox: { enabled: false },
+                        dragBox: { enabled: false },
+                        grabbedBoxes: { enabled: false },
+                        elementLabel: { enabled: ${enabled ? "true" : "false"} },
                         toolbar: {
                           enabled: ${enabled ? "true" : "false"},
                         },
@@ -1020,6 +1025,11 @@ export function AgentPreview({
               try {
                 targetApi.setOptions({
                   theme: {
+                    // Keep inspector visuals subtle in preview.
+                    selectionBox: { enabled: false },
+                    dragBox: { enabled: false },
+                    grabbedBoxes: { enabled: false },
+                    elementLabel: { enabled: Boolean(on) },
                     toolbar: {
                       enabled: Boolean(on),
                     },
@@ -1113,6 +1123,10 @@ export function AgentPreview({
                 try {
                   api.setOptions({
                     theme: {
+                      selectionBox: { enabled: false },
+                      dragBox: { enabled: false },
+                      grabbedBoxes: { enabled: false },
+                      elementLabel: { enabled: false },
                       toolbar: {
                         enabled: false,
                       },

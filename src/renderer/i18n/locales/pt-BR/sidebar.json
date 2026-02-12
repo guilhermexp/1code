@@ -1,1 +1,83 @@
-{}
+{
+  "search": {
+    "placeholder": "Pesquisar workspaces..."
+  },
+  "actions": {
+    "newWorkspace": "Novo Workspace",
+    "startNewWorkspace": "Iniciar novo workspace",
+    "feedback": "Feedback"
+  },
+  "sections": {
+    "drafts": "Rascunhos",
+    "pinnedWorkspaces": "Workspaces Fixados",
+    "recentWorkspaces": "Workspaces Recentes",
+    "workspaces": "Workspaces"
+  },
+  "selection": {
+    "selectedCount_one": "{{count}} selecionado",
+    "selectedCount_other": "{{count}} selecionados",
+    "archiving": "Arquivando..."
+  },
+  "items": {
+    "draft": "Rascunho",
+    "newWorkspacePlaceholder": "Novo workspace"
+  },
+  "navigation": {
+    "inbox": "Caixa de entrada",
+    "automations": "Automações"
+  },
+  "help": {
+    "title": "Ajuda",
+    "discord": "Discord",
+    "shortcuts": "Atalhos"
+  },
+  "account": {
+    "user": "Usuário",
+    "login": "Entrar",
+    "logout": "Sair"
+  },
+  "kanban": {
+    "view": "Visão Kanban"
+  },
+  "labels": {
+    "or": "ou",
+    "remoteProject": "Projeto remoto",
+    "localProject": "Projeto local",
+    "unknownProject": "Projeto desconhecido"
+  },
+  "tooltips": {
+    "archive": "Arquivar",
+    "help": "Ajuda",
+    "closeSidebar": "Fechar barra lateral"
+  },
+  "aria": {
+    "deleteDraft": "Excluir rascunho",
+    "archiveWorkspace": "Arquivar workspace",
+    "closeSidebar": "Fechar barra lateral"
+  },
+  "context": {
+    "pinSelected_one": "Fixar {{count}} workspace",
+    "pinSelected_other": "Fixar {{count}} workspaces",
+    "unpinSelected_one": "Desafixar {{count}} workspace",
+    "unpinSelected_other": "Desafixar {{count}} workspaces",
+    "archiveSelected_one": "Arquivar {{count}} workspace",
+    "archiveSelected_other": "Arquivar {{count}} workspaces",
+    "archivingSelected": "Arquivando...",
+    "forkLocally": "Forkar localmente",
+    "pinWorkspace": "Fixar workspace",
+    "unpinWorkspace": "Desafixar workspace",
+    "renameWorkspace": "Renomear workspace",
+    "copyBranchName": "Copiar nome da branch",
+    "exportWorkspace": "Exportar workspace",
+    "downloadAsMarkdown": "Baixar como Markdown",
+    "downloadAsJson": "Baixar como JSON",
+    "downloadAsText": "Baixar como Texto",
+    "copyAsMarkdown": "Copiar como Markdown",
+    "copyAsJson": "Copiar como JSON",
+    "copyAsText": "Copiar como Texto",
+    "openInNewWindow": "Abrir em nova janela",
+    "archiveWorkspace": "Arquivar workspace",
+    "archiveAllBelow": "Arquivar todos abaixo",
+    "archiveOthers": "Arquivar outros"
+  }
+}
