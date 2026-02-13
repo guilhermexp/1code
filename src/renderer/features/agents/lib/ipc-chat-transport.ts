@@ -207,6 +207,13 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     return new ReadableStream({
       start: (controller) => {
         let controllerClosed = false
+        const clearCompactingForSubChat = () => {
+          const compacting = appStore.get(compactingSubChatsAtom)
+          if (!compacting.has(this.config.subChatId)) return
+          const newCompacting = new Set(compacting)
+          newCompacting.delete(this.config.subChatId)
+          appStore.set(compactingSubChatsAtom, newCompacting)
+        }
         const sub = trpcClient.claude.chat.subscribe(
           {
             subChatId: this.config.subChatId,
@@ -452,6 +459,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
               }
 
               if (chunk.type === "finish" && !controllerClosed) {
+                clearCompactingForSubChat()
                 console.log(`[SD] R:FINISH sub=${subId} n=${chunkCount}`)
                 try {
                   controller.close()
@@ -462,6 +470,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
               }
             },
             onError: (err: Error) => {
+              clearCompactingForSubChat()
               console.log(`[SD] R:ERROR sub=${subId} n=${chunkCount} last=${lastChunkType} err=${err.message}`)
               // Track transport errors in Sentry
               captureException(err, {
@@ -480,6 +489,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
               controller.error(err)
             },
             onComplete: () => {
+              clearCompactingForSubChat()
               console.log(`[SD] R:COMPLETE sub=${subId} n=${chunkCount} last=${lastChunkType}`)
               // Note: Don't clear pending questions here - let active-chat.tsx handle it
               // via the stream stop detection effect. Clearing here causes race conditions
@@ -498,6 +508,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
 
         // Handle abort
         options.abortSignal?.addEventListener("abort", () => {
+          clearCompactingForSubChat()
           console.log(`[SD] R:ABORT sub=${subId} n=${chunkCount} last=${lastChunkType}`)
           sub.unsubscribe()
           // trpcClient.claude.cancel.mutate({ subChatId: this.config.subChatId })

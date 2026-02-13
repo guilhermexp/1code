@@ -104,7 +104,6 @@ export const AgentContextIndicator = memo(function AgentContextIndicator({
   const contextTokens = tokenData.totalInputTokens
   const contextWindow = CONTEXT_WINDOWS[modelId]
   const percentUsed = Math.min(100, (contextTokens / contextWindow) * 100)
-  const isEmpty = contextTokens === 0
 
   const isClickable = onCompact && !disabled && !isCompacting
 
@@ -114,7 +113,7 @@ export const AgentContextIndicator = memo(function AgentContextIndicator({
         <div
           onClick={isClickable ? onCompact : undefined}
           className={cn(
-            "h-4 w-4 flex items-center justify-center",
+            "h-7 inline-flex items-center gap-1.5 px-2 rounded-md border border-border/60 bg-background/70",
             isClickable
               ? "cursor-pointer hover:opacity-70 transition-opacity"
               : "cursor-default",
@@ -128,14 +127,27 @@ export const AgentContextIndicator = memo(function AgentContextIndicator({
             strokeWidth={2.5}
             className={isCompacting ? "animate-pulse" : undefined}
           />
+          <span className="text-[11px] leading-none whitespace-nowrap">
+            {isCompacting ? (
+              <span className="text-muted-foreground">Compacting...</span>
+            ) : (
+              <>
+                <span className="font-mono font-medium text-foreground">
+                  {percentUsed.toFixed(1)}%
+                </span>
+                <span className="text-muted-foreground mx-1">·</span>
+                <span className="text-muted-foreground">
+                  {formatTokens(contextTokens)} / {formatTokens(contextWindow)} context
+                </span>
+              </>
+            )}
+          </span>
         </div>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={8}>
         <p className="text-xs">
-          {isEmpty ? (
-            <span className="text-muted-foreground">
-              Context: 0 / {formatTokens(contextWindow)}
-            </span>
+          {isCompacting ? (
+            <span className="text-muted-foreground">Compacting context...</span>
           ) : (
             <>
               <span className="font-mono font-medium text-foreground">
