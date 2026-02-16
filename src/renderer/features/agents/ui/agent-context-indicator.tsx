@@ -127,21 +127,6 @@ export const AgentContextIndicator = memo(function AgentContextIndicator({
             strokeWidth={2.5}
             className={isCompacting ? "animate-pulse" : undefined}
           />
-          <span className="text-[11px] leading-none whitespace-nowrap">
-            {isCompacting ? (
-              <span className="text-muted-foreground">Compacting...</span>
-            ) : (
-              <>
-                <span className="font-mono font-medium text-foreground">
-                  {percentUsed.toFixed(1)}%
-                </span>
-                <span className="text-muted-foreground mx-1">·</span>
-                <span className="text-muted-foreground">
-                  {formatTokens(contextTokens)} / {formatTokens(contextWindow)} context
-                </span>
-              </>
-            )}
-          </span>
         </div>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={8}>

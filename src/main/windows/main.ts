@@ -554,7 +554,7 @@ function getUseNativeFramePreference(): boolean {
  * @param options.chatId Open this chat in the new window
  * @param options.subChatId Open this sub-chat in the new window
  */
-export function createWindow(options?: { chatId?: string; subChatId?: string; splitPaneIds?: string[] }): BrowserWindow {
+export async function createWindow(options?: { chatId?: string; subChatId?: string; splitPaneIds?: string[] }): Promise<BrowserWindow> {
   // Register IPC handlers before creating first window
   registerIpcHandlers()
 
@@ -800,14 +800,14 @@ export function createWindow(options?: { chatId?: string; subChatId?: string; sp
     // windowManager handles cleanup via 'closed' event listener
   })
 
-  // Load the renderer - check auth first
+  // Load the renderer - check auth first (try refreshing expired tokens)
   const devServerUrl = process.env.ELECTRON_RENDERER_URL
   const authManager = getAuthManager()
 
   console.log("[Main] ========== AUTH CHECK ==========")
   console.log("[Main] AuthManager exists:", !!authManager)
-  const isAuth = authManager.isAuthenticated()
-  console.log("[Main] isAuthenticated():", isAuth)
+  const isAuth = await authManager.ensureAuthenticated()
+  console.log("[Main] ensureAuthenticated():", isAuth)
   const user = authManager.getUser()
   console.log("[Main] getUser():", user ? user.email : "null")
   console.log("[Main] ================================")
@@ -895,6 +895,6 @@ export function createWindow(options?: { chatId?: string; subChatId?: string; sp
 /**
  * Create the main application window (alias for createWindow for backwards compatibility)
  */
-export function createMainWindow(): BrowserWindow {
+export async function createMainWindow(): Promise<BrowserWindow> {
   return createWindow()
 }

@@ -105,8 +105,8 @@ export class AuthStore {
       }
 
       return null
-    } catch {
-      console.error("Failed to load auth data")
+    } catch (error) {
+      console.error("Failed to load auth data:", error)
       return null
     }
   }

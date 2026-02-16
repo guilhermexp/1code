@@ -179,6 +179,41 @@ export class AuthManager {
   }
 
   /**
+   * Check if user has stored credentials (even if token is expired).
+   * Returns true if a refresh token exists, meaning we can try to refresh.
+   */
+  hasStoredCredentials(): boolean {
+    const data = this.store.load()
+    return data !== null && !!data.refreshToken
+  }
+
+  /**
+   * Ensure authentication by attempting token refresh if expired.
+   * Call this on startup instead of isAuthenticated() to avoid
+   * forcing re-login when only the access token expired.
+   */
+  async ensureAuthenticated(): Promise<boolean> {
+    // Already valid — no work needed
+    if (this.store.isAuthenticated()) {
+      this.scheduleRefresh()
+      return true
+    }
+
+    // Token expired but we have a refresh token — try to refresh
+    if (this.hasStoredCredentials()) {
+      console.log("[AuthManager] Token expired, attempting refresh...")
+      const refreshed = await this.refresh()
+      if (refreshed) {
+        console.log("[AuthManager] Token refreshed successfully")
+        return true
+      }
+      console.warn("[AuthManager] Token refresh failed, user must re-authenticate")
+    }
+
+    return false
+  }
+
+  /**
    * Get current user
    */
   getUser(): AuthUser | null {
