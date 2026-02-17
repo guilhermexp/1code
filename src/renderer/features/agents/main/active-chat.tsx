@@ -41,6 +41,7 @@ import {
   ArrowDown,
   ChevronDown,
   GitFork,
+  Globe,
   ListTree,
   TerminalSquare
 } from "lucide-react"
@@ -7134,7 +7135,6 @@ Make sure to preserve all functionality from both branches when resolving confli
                 {/* Open Preview Button - shows when preview is closed (desktop only) */}
                 {!isMobileFullscreen &&
                   !isPreviewSidebarOpen &&
-                  sandboxId &&
                   (canOpenPreview ? (
                     <Tooltip delayDuration={500}>
                       <TooltipTrigger asChild>
@@ -7145,7 +7145,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                           className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
                           aria-label="Open preview"
                         >
-                          <IconOpenSidebarRight className="h-4 w-4" />
+                          <Globe className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Open preview</TooltipContent>
@@ -7160,7 +7160,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                           className="h-6 w-6 p-0 text-muted-foreground flex-shrink-0 rounded-md cursor-not-allowed pointer-events-none"
                           aria-label="Preview not available"
                         >
-                          <IconOpenSidebarRight className="h-4 w-4" />
+                          <Globe className="h-4 w-4" />
                         </Button>
                       </span>
                     </PreviewSetupHoverCard>
