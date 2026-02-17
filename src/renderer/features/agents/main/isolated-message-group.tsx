@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useCallback, useMemo } from "react"
+import { createContext, memo, useMemo } from "react"
 import { useAtomValue } from "jotai"
 import {
   messageAtomFamily,
@@ -9,13 +9,15 @@ import {
   rollbackTargetPerChatAtomFamily,
   isRollingBackAtom,
 } from "../stores/message-store"
-import { useStreamingStatusStore } from "../stores/streaming-status-store"
 import { MemoizedAssistantMessages } from "./messages-list"
 import { extractTextMentions, TextMentionBlocks, TextMentionBlock } from "../mentions/render-file-mentions"
 import { AgentImageItem } from "../ui/agent-image-item"
 import { IconTextUndo } from "../../../components/ui/icons"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../../components/ui/tooltip"
 import { cn } from "../../../lib/utils"
+
+// Context for fork callback - avoids threading props through MemoizedAssistantMessages
+export const ForkContext = createContext<((messageId: string) => void) | null>(null)
 
 // ============================================================================
 // ISOLATED MESSAGE GROUP (LAYER 4)
@@ -101,8 +103,6 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   onRollback,
 }: IsolatedMessageGroupProps) {
   // Subscribe to specific atoms - NOT the whole messages array
-  // Use per-subChat families so split view panes render independently
-  const perChatKey = `${subChatId}:${userMsgId}`
   const userMsg = useAtomValue(messageAtomFamily(userMsgId))
   const assistantIds = useAtomValue(assistantIdsPerChatFromMessagesAtomFamily(perChatKey))
   const isLastGroup = useAtomValue(isLastUserMessagePerChatFromMessagesAtomFamily(perChatKey))
@@ -115,6 +115,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
 
   // Show rollback button only when this user turn has a valid rollback target.
   const canRollback = onRollback && !!rollbackTargetSdkUuid && !isStreaming
+  const canFork = !!onFork && !isStreaming
 
   // Extract user message content
   // Note: file-content parts are hidden from UI but sent to agent
@@ -154,7 +155,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
     <MessageGroupWrapper isLastGroup={isLastGroup}>
       {/* All attachments in one row - NOT sticky (only when there's also text) */}
       {((!isImageOnlyMessage && imageParts.length > 0) || textMentions.length > 0) && (
-        <div className="mb-2 pointer-events-auto flex flex-wrap items-center gap-1.5">
+        <div className="mb-2 pointer-events-auto flex flex-wrap items-end gap-1.5">
           {imageParts.length > 0 && !isImageOnlyMessage && (() => {
             const resolveImgUrl = (img: any) =>
               img.data?.base64Data && img.data?.mediaType
@@ -228,25 +229,27 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
 
           {/* Rollback button - overlay bottom-right of user bubble */}
           {canRollback && (
-            <div className="absolute bottom-1 right-1 z-20">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => onRollback(userMsg)}
-                    disabled={isRollingBack}
-                    tabIndex={-1}
-                    className={cn(
-                      "p-1 rounded-md transition-all duration-150 ease-out hover:bg-accent/80 active:scale-[0.97] opacity-0 group-hover/user-message:opacity-100",
-                      isRollingBack && "!opacity-50 cursor-not-allowed",
-                    )}
-                  >
-                    <IconTextUndo className="w-3.5 h-3.5 text-muted-foreground" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  {isRollingBack ? "Rolling back..." : "Rollback to here"}
-                </TooltipContent>
-              </Tooltip>
+            <div className="absolute bottom-1 right-1 z-20 flex items-center gap-0.5">
+              {canRollback && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => onRollback(userMsg)}
+                      disabled={isRollingBack}
+                      tabIndex={-1}
+                      className={cn(
+                        "p-1 rounded-md transition-all duration-150 ease-out hover:bg-accent/80 active:scale-[0.97] opacity-0 group-hover/user-message:opacity-100",
+                        isRollingBack && "!opacity-50 cursor-not-allowed",
+                      )}
+                    >
+                      <IconTextUndo className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {isRollingBack ? "Rolling back..." : "Rollback to here"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
           )}
         </div>

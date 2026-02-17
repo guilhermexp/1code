@@ -248,6 +248,22 @@ export const lastSelectedModelIdAtom = atomWithStorage<string>(
   { getOnInit: true },
 )
 
+export const lastSelectedCodexModelIdAtom = atomWithStorage<string>(
+  "agents:lastSelectedCodexModelId",
+  "gpt-5.3-codex",
+  undefined,
+  { getOnInit: true },
+)
+
+export const lastSelectedCodexThinkingAtom = atomWithStorage<
+  "low" | "medium" | "high" | "xhigh"
+>(
+  "agents:lastSelectedCodexThinking",
+  "high",
+  undefined,
+  { getOnInit: true },
+)
+
 // Storage for all sub-chat modes (persisted per subChatId)
 const subChatModesStorageAtom = atomWithStorage<Record<string, AgentMode>>(
   "agents:subChatModes",
@@ -403,45 +419,6 @@ export const diffFilesCollapsedAtomFamily = atomFamily((chatId: string) =>
     },
   ),
 )
-
-// Collapsible steps expanded state per message (session-only)
-// Map<`${subChatId}:${messageId}`, isExpanded>
-const assistantMessageStepsExpandedStorageAtom = atom<Record<string, boolean | undefined>>({})
-
-export const assistantMessageStepsExpandedAtomFamily = atomFamily((key: string) =>
-  atom(
-    (get) => get(assistantMessageStepsExpandedStorageAtom)[key],
-    (get, set, isExpanded: boolean) => {
-      const current = get(assistantMessageStepsExpandedStorageAtom)
-      set(assistantMessageStepsExpandedStorageAtom, { ...current, [key]: isExpanded })
-    },
-  ),
-)
-
-// Helpers for split view ratio management
-export function getDefaultRatios(n: number): number[] {
-  if (n <= 0) return []
-  return Array(n).fill(1 / n) as number[]
-}
-
-export function addPaneRatio(ratios: number[]): number[] {
-  const n = ratios.length + 1
-  const scale = (n - 1) / n
-  return [...ratios.map(r => r * scale), 1 / n]
-}
-
-export function removePaneRatio(ratios: number[], removeIdx: number): number[] {
-  if (removeIdx < 0 || removeIdx >= ratios.length) return getDefaultRatios(ratios.length)
-  const removed = ratios[removeIdx]!
-  const rest = ratios.filter((_, i) => i !== removeIdx)
-  if (rest.length === 0) return []
-  const sum = rest.reduce((a, b) => a + b, 0)
-  if (sum === 0) return getDefaultRatios(rest.length)
-  const result = rest.map(r => r + (r / sum) * removed)
-  // Normalize to prevent floating-point drift
-  const total = result.reduce((a, b) => a + b, 0)
-  return total > 0 ? result.map(r => r / total) : getDefaultRatios(rest.length)
-}
 
 // Sub-chats display mode - tabs (horizontal) or sidebar (vertical list)
 // Window-scoped so each window can have its own layout preference
@@ -640,6 +617,7 @@ export const pendingConflictResolutionMessageAtom = atom<string | null>(null)
 // After successful OAuth flow, this triggers automatic retry of the message
 export type PendingAuthRetryMessage = {
   subChatId: string  // Required: only retry in the correct chat
+  provider: "claude-code" | "codex"
   prompt: string
   images?: Array<{
     base64Data: string
@@ -802,16 +780,6 @@ export const openLocallyChatIdAtom = atom<string | null>(null)
 export const agentsPlanSidebarWidthAtom = atomWithStorage<number>(
   "agents-plan-sidebar-width",
   500,
-  undefined,
-  { getOnInit: true },
-)
-
-// Plan sidebar display mode - sidebar (side peek) or center dialog
-export type PlanDisplayMode = "side-peek" | "center-peek"
-
-export const planDisplayModeAtom = atomWithStorage<PlanDisplayMode>(
-  "agents:planDisplayMode",
-  "side-peek",
   undefined,
   { getOnInit: true },
 )

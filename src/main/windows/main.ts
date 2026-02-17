@@ -208,7 +208,7 @@ function registerIpcHandlers(): void {
   })
 
   // New window - optionally open with specific chat/subchat
-  ipcMain.handle("window:new", (_event, options?: { chatId?: string; subChatId?: string; splitPaneIds?: string[] }) => {
+  ipcMain.handle("window:new", (_event, options?: { chatId?: string; subChatId?: string }) => {
     createWindow(options)
   })
 
@@ -721,9 +721,10 @@ export async function createWindow(options?: { chatId?: string; subChatId?: stri
   // Show window when ready
   window.on("ready-to-show", () => {
     console.log("[Main] Window", window.id, "ready to show")
-    // Always show native macOS traffic lights
+    // Start with traffic lights hidden - the renderer will show them
+    // after hydration based on the persisted sidebar state
     if (process.platform === "darwin") {
-      window.setWindowButtonVisibility(true)
+      window.setWindowButtonVisibility(false)
     }
     window.show()
   })
@@ -737,10 +738,9 @@ export async function createWindow(options?: { chatId?: string; subChatId?: stri
     window.webContents.send("window:fullscreen-change", true)
   })
   window.on("leave-full-screen", () => {
-    // Show native traffic lights when exiting fullscreen
-    if (process.platform === "darwin") {
-      window.setWindowButtonVisibility(true)
-    }
+    // Don't force traffic lights visible here - the renderer will
+    // restore the correct visibility based on sidebar state when
+    // it receives the fullscreen-change event
     window.webContents.send("window:fullscreen-change", false)
   })
 
@@ -823,7 +823,6 @@ export async function createWindow(options?: { chatId?: string; subChatId?: stri
       params.set("windowId", windowId)
       if (options?.chatId) params.set("chatId", options.chatId)
       if (options?.subChatId) params.set("subChatId", options.subChatId)
-      if (options?.splitPaneIds) params.set("splitPaneIds", JSON.stringify(options.splitPaneIds))
     }
 
     if (devServerUrl) {
@@ -868,12 +867,9 @@ export async function createWindow(options?: { chatId?: string; subChatId?: stri
     }
   }
 
-  // Ensure native traffic lights are visible after page load
+  // Log page load - traffic light visibility is managed by the renderer
   window.webContents.on("did-finish-load", () => {
     console.log("[Main] Page finished loading in window", window.id)
-    if (process.platform === "darwin") {
-      window.setWindowButtonVisibility(true)
-    }
   })
 
   window.webContents.on(

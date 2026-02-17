@@ -58,21 +58,6 @@ export const messageIdsAtom = atom<string[]>([])
 // This avoids reading all message atoms just to check roles
 const messageRolesAtom = atom<Map<string, "user" | "assistant" | "system">>(new Map())
 
-// ============================================================================
-// PER-SUBCHAT ATOM FAMILIES (for split view support)
-// ============================================================================
-// The global atoms above only hold data for one active chat at a time.
-// For split view, we need per-subChat atoms so each pane renders its own messages.
-// The per-message atoms (messageAtomFamily) are already per-message-ID and work fine.
-
-export const messageIdsPerChatAtom = atomFamily((_subChatId: string) =>
-  atom<string[]>([])
-)
-
-const messageRolesPerChatAtom = atomFamily((_subChatId: string) =>
-  atom<Map<string, "user" | "assistant" | "system">>(new Map())
-)
-
 // Currently streaming message ID (null if not streaming)
 export const streamingMessageIdAtom = atom<string | null>(null)
 
@@ -99,17 +84,6 @@ export const lastMessageIdAtom = atom((get) => {
 export const isLastMessageAtomFamily = atomFamily((messageId: string) =>
   atom((get) => get(lastMessageIdAtom) === messageId)
 )
-
-// Per-subchat version: "subChatId:messageId" key
-export const isLastMessagePerChatAtomFamily = atomFamily((key: string) => {
-  const sepIdx = key.indexOf(":")
-  const subChatId = key.slice(0, sepIdx)
-  const messageId = key.slice(sepIdx + 1)
-  return atom((get) => {
-    const ids = get(messageIdsPerChatAtom(subChatId))
-    return ids.length > 0 && ids[ids.length - 1] === messageId
-  })
-})
 
 // Check if a specific message is currently streaming
 export const isMessageStreamingAtomFamily = atomFamily((messageId: string) =>
@@ -931,18 +905,6 @@ export const syncMessagesWithStatusAtom = atom(
       set(messageRolesAtom, newRoles)
     }
 
-    // Also update per-subChat atoms (for split view support)
-    if (subChatId) {
-      const prevPCIds = get(messageIdsPerChatAtom(subChatId))
-      if (newIds.length !== prevPCIds.length || newIds.some((id, i) => id !== prevPCIds[i])) {
-        set(messageIdsPerChatAtom(subChatId), newIds)
-      }
-      const prevPCRoles = get(messageRolesPerChatAtom(subChatId))
-      if (newRoles.size !== prevPCRoles.size || [...newRoles].some(([id, role]) => prevPCRoles.get(id) !== role)) {
-        set(messageRolesPerChatAtom(subChatId), newRoles)
-      }
-    }
-
     // Update individual message atoms ONLY if they changed
     // This is the key optimization - only changed messages trigger re-renders
     // CRITICAL: AI SDK mutates objects in-place, so we MUST create a new reference
@@ -1026,12 +988,6 @@ export function clearSubChatCaches(subChatId: string) {
   messageGroupsCacheByChat.delete(subChatId)
   lastAssistantCacheByChat.delete(subChatId)
   tokenDataCacheByChat.delete(subChatId)
-
-  // Clear per-subChat atom families
-  messageIdsPerChatAtom.remove(subChatId)
-  messageRolesPerChatAtom.remove(subChatId)
-  userMessageIdsPerChatCache.delete(subChatId)
-  messageGroupsPerChatCache.delete(subChatId)
 }
 
 // Clear all caches (call on app reset/logout)

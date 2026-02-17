@@ -1,40 +1,48 @@
 "use client"
 
-import { useAtom, useAtomValue } from "jotai"
-import { ListTree } from "lucide-react"
-import { memo, useCallback, useMemo } from "react"
+import { useAtomValue } from "jotai"
+import { ListTree, MoreHorizontal } from "lucide-react"
+import { memo, useCallback, useContext, useMemo, useState } from "react"
 
-import { CollapseIcon, ExpandIcon } from "../../../components/ui/icons"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../../components/ui/dropdown-menu"
+import { CollapseIcon, ExpandIcon, PlanIcon } from "../../../components/ui/icons"
 import { TextShimmer } from "../../../components/ui/text-shimmer"
 import { cn } from "../../../lib/utils"
-import { assistantMessageStepsExpandedAtomFamily, selectedProjectAtom, showMessageJsonAtom } from "../atoms"
-import { useFileOpen } from "../mentions"
+import { selectedProjectAtom, showMessageJsonAtom } from "../atoms"
+import { MessageJsonDisplay } from "../ui/message-json-display"
 import { AgentAskUserQuestionTool } from "../ui/agent-ask-user-question-tool"
 import { AgentBashTool } from "../ui/agent-bash-tool"
 import { AgentEditTool } from "../ui/agent-edit-tool"
 import { AgentExploringGroup } from "../ui/agent-exploring-group"
+import { AgentTaskToolsGroup } from "../ui/agent-task-tools"
+import { AgentPlanFileTool } from "../ui/agent-plan-file-tool"
+import { isPlanFile } from "../ui/agent-tool-utils"
 import {
   AgentMessageUsage,
   type AgentMessageMetadata,
 } from "../ui/agent-message-usage"
-import { AgentPlanFileTool } from "../ui/agent-plan-file-tool"
 import { AgentPlanTool } from "../ui/agent-plan-tool"
 import { AgentTaskTool } from "../ui/agent-task-tool"
-import { AgentTaskToolsGroup } from "../ui/agent-task-tools"
 import { AgentThinkingTool } from "../ui/agent-thinking-tool"
 import { AgentTodoTool } from "../ui/agent-todo-tool"
+import { AgentMcpToolCall } from "../ui/agent-mcp-tool-call"
 import { AgentToolCall } from "../ui/agent-tool-call"
-import { AgentToolRegistry, getToolStatus } from "../ui/agent-tool-registry"
-import { isPlanFile } from "../ui/agent-tool-utils"
+import { AgentToolRegistry, getToolStatus, parseMcpToolType } from "../ui/agent-tool-registry"
 import { AgentWebFetchTool } from "../ui/agent-web-fetch-tool"
 import { AgentWebSearchCollapsible } from "../ui/agent-web-search-collapsible"
-import { GitActivityBadges } from "../ui/git-activity-badges"
 import {
   CopyButton,
   PlayButton,
   getMessageTextContent,
 } from "../ui/message-action-buttons"
-import { MessageJsonDisplay } from "../ui/message-json-display"
+import { useFileOpen } from "../mentions"
+import { GitActivityBadges } from "../ui/git-activity-badges"
+import { ForkContext } from "./isolated-message-group"
 import { MemoizedTextPart } from "./memoized-text-part"
 
 // Exploring tools - these get grouped when 3+ consecutive
@@ -53,6 +61,60 @@ const TASK_TOOLS = new Set([
   "tool-TaskGet",
   "tool-TaskList",
 ])
+
+const STREAMING_REASONING_STATES = new Set(["streaming", "in_progress", "input-streaming"])
+const DONE_REASONING_STATES = new Set(["done", "completed", "result", "output-available"])
+const ERROR_REASONING_STATES = new Set(["error", "output-error"])
+
+function mapReasoningStateToThinkingState(state: unknown): string {
+  if (typeof state !== "string") {
+    return "output-available"
+  }
+
+  const normalized = state.trim().toLowerCase()
+  if (STREAMING_REASONING_STATES.has(normalized)) return "input-streaming"
+  if (DONE_REASONING_STATES.has(normalized)) return "output-available"
+  if (ERROR_REASONING_STATES.has(normalized)) return "output-error"
+  return "output-available"
+}
+
+function getThinkingText(part: any): string {
+  if (typeof part?.input?.text === "string") return part.input.text
+  if (typeof part?.text === "string") return part.text
+  return ""
+}
+
+function toThinkingToolPart(part: any, messageId: string | undefined, index: number): any {
+  const normalizedState = mapReasoningStateToThinkingState(part.state)
+  const text = getThinkingText(part)
+  const normalizedPart = {
+    ...part,
+    type: "tool-Thinking",
+    toolCallId:
+      typeof part.toolCallId === "string" && part.toolCallId.length > 0
+        ? part.toolCallId
+        : typeof part.id === "string" && part.id.length > 0
+          ? part.id
+          : `reasoning-${messageId || "message"}-${index}`,
+    toolName: typeof part.toolName === "string" ? part.toolName : "Thinking",
+    input: {
+      ...(part.input && typeof part.input === "object" ? part.input : {}),
+      text,
+    },
+    state: normalizedState,
+  }
+
+  if (normalizedState !== "output-available") {
+    return normalizedPart
+  }
+
+  const completedResult = { completed: true }
+  return {
+    ...normalizedPart,
+    result: normalizedPart.result ?? completedResult,
+    output: normalizedPart.output ?? completedResult,
+  }
+}
 
 
 // Group consecutive exploring tools into exploring-group
@@ -111,23 +173,23 @@ function groupTaskTools(parts: any[], nestedToolIds: Set<string>): any[] {
 interface CollapsibleStepsProps {
   stepsCount: number
   children: React.ReactNode
-  isExpanded: boolean
-  onToggle: () => void
+  defaultExpanded?: boolean
 }
 
 function CollapsibleSteps({
   stepsCount,
   children,
-  isExpanded,
-  onToggle,
+  defaultExpanded = false,
 }: CollapsibleStepsProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
+
   if (stepsCount === 0) return null
 
   return (
     <div className="mb-2" data-collapsible-steps="true">
       <div
         className="flex items-center justify-between rounded-md py-0.5 px-2 cursor-pointer hover:bg-muted/50 transition-colors"
-        onClick={onToggle}
+        onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <ListTree className="w-3.5 h-3.5 flex-shrink-0" />
@@ -139,7 +201,7 @@ function CollapsibleSteps({
           className="p-1 rounded-md hover:bg-accent transition-[background-color,transform] duration-150 ease-out active:scale-95"
           onClick={(e) => {
             e.stopPropagation()
-            onToggle()
+            setIsExpanded(!isExpanded)
           }}
         >
           <div className="relative w-4 h-4">
@@ -188,6 +250,24 @@ interface MessageStateSnapshot {
 }
 const messageStateCache = new Map<string, MessageStateSnapshot>()
 
+function getTrackedPartTextLength(part: any): number {
+  if (part?.type === "text") {
+    return typeof part.text === "string" ? part.text.length : 0
+  }
+
+  if (part?.type === "reasoning") {
+    return typeof part.text === "string" ? part.text.length : 0
+  }
+
+  if (part?.type === "tool-Thinking") {
+    if (typeof part?.input?.text === "string") return part.input.text.length
+    if (typeof part?.text === "string") return part.text.length
+    return 0
+  }
+
+  return -1
+}
+
 // Custom comparison - check if message content actually changed
 // CRITICAL: AI SDK mutates objects in-place! So prev.message.parts[i].text === next.message.parts[i].text
 // even when text HAS changed (they're the same mutated object).
@@ -217,9 +297,7 @@ function areMessagePropsEqual(
   const lastPart = nextParts[nextParts.length - 1]
 
   const currentState: MessageStateSnapshot = {
-    textLengths: nextParts.map((p: any) =>
-      p.type === "text" ? (p.text?.length || 0) : -1
-    ),
+    textLengths: nextParts.map((p: any) => getTrackedPartTextLength(p)),
     // Track ALL part states - critical for detecting Edit plan file streaming!
     partStates: nextParts.map((p: any) => p.state),
     // Track tool input changes - this is critical for tool streaming!
@@ -282,6 +360,7 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
   const selectedProject = useAtomValue(selectedProjectAtom)
   const projectPath = selectedProject?.path
   const onOpenFile = useFileOpen()
+  const onFork = useContext(ForkContext)
   const isDev = import.meta.env.DEV
   const messageParts = message?.parts || []
 
@@ -436,15 +515,6 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
   )
 
   const msgMetadata = message?.metadata as AgentMessageMetadata
-  const stepsExpansionKey = `${subChatId}:${message.id}`
-  const [storedStepsExpanded, setStoredStepsExpanded] = useAtom(
-    assistantMessageStepsExpandedAtomFamily(stepsExpansionKey)
-  )
-  const isStepsExpanded = storedStepsExpanded ?? false
-  const toggleStepsExpanded = useCallback(
-    () => setStoredStepsExpanded(!isStepsExpanded),
-    [isStepsExpanded, setStoredStepsExpanded]
-  )
 
   const renderPart = useCallback((part: any, idx: number, isFinal = false) => {
     if (part.type === "step-start") return null
@@ -497,7 +567,15 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
     }
 
     if (part.type === "tool-Bash") return <AgentBashTool key={idx} part={part} messageId={message.id} partIndex={idx} chatStatus={status} />
-    if (part.type === "tool-Thinking") return <AgentThinkingTool key={idx} part={part} chatStatus={status} />
+    if (part.type === "reasoning" || part.type === "tool-Thinking") {
+      return (
+        <AgentThinkingTool
+          key={idx}
+          part={toThinkingToolPart(part, message?.id, idx)}
+          chatStatus={status}
+        />
+      )
+    }
 
     // Plan files: unified handling
     // - In collapsed steps: all show mini indicator, last collapsed op's card shown separately after finalParts
@@ -609,6 +687,19 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
       )
     }
 
+    // MCP tool calls (pattern: tool-mcp__<server>__<tool>)
+    const mcpInfo = parseMcpToolType(part.type)
+    if (mcpInfo) {
+      return (
+        <AgentMcpToolCall
+          key={idx}
+          part={part}
+          mcpInfo={mcpInfo}
+          chatStatus={status}
+        />
+      )
+    }
+
     if (part.type?.startsWith("tool-")) {
       return (
         <div key={idx} className="text-xs text-muted-foreground py-0.5 px-2">
@@ -620,40 +711,6 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
     return null
   }, [nestedToolsMap, nestedToolIds, orphanToolCallIds, orphanFirstToolCallIds, orphanTaskGroups, collapseBeforeIndex, visibleStepsCount, status, isLastMessage, isStreaming, subChatId, message.id, planOpsSummary, shouldCollapse, lastCollapsedPlanOp])
 
-  const renderStepParts = useCallback(() => {
-    // Apply both grouping functions: first task tools, then exploring tools
-    const taskGrouped = groupTaskTools(stepParts, nestedToolIds)
-    const grouped = groupExploringTools(taskGrouped, nestedToolIds)
-    return grouped.map((part: any, idx: number) => {
-      if (part.type === "exploring-group") {
-        const isLast = idx === grouped.length - 1
-        const isGroupStreaming = isStreaming && isLastMessage && isLast
-        return (
-          <AgentExploringGroup
-            key={idx}
-            parts={part.parts}
-            chatStatus={status}
-            isStreaming={isGroupStreaming}
-          />
-        )
-      }
-      if (part.type === "task-group") {
-        const isLast = idx === grouped.length - 1
-        const isGroupStreaming = isStreaming && isLastMessage && isLast
-        return (
-          <AgentTaskToolsGroup
-            key={idx}
-            parts={part.parts}
-            chatStatus={status}
-            isStreaming={isGroupStreaming}
-            subChatId={subChatId}
-          />
-        )
-      }
-      return renderPart(part, idx, false)
-    })
-  }, [stepParts, nestedToolIds, isStreaming, isLastMessage, status, subChatId, renderPart])
-
   if (!message) return null
 
   return (
@@ -663,12 +720,40 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
     >
       <div className="flex flex-col gap-1.5">
         {shouldCollapse && visibleStepsCount > 0 && (
-          <CollapsibleSteps
-            stepsCount={visibleStepsCount}
-            isExpanded={isStepsExpanded}
-            onToggle={toggleStepsExpanded}
-          >
-            {isStepsExpanded ? renderStepParts() : null}
+          <CollapsibleSteps stepsCount={visibleStepsCount}>
+            {(() => {
+              // Apply both grouping functions: first task tools, then exploring tools
+              const taskGrouped = groupTaskTools(stepParts, nestedToolIds)
+              const grouped = groupExploringTools(taskGrouped, nestedToolIds)
+              return grouped.map((part: any, idx: number) => {
+                if (part.type === "exploring-group") {
+                  const isLast = idx === grouped.length - 1
+                  const isGroupStreaming = isStreaming && isLastMessage && isLast
+                  return (
+                    <AgentExploringGroup
+                      key={idx}
+                      parts={part.parts}
+                      chatStatus={status}
+                      isStreaming={isGroupStreaming}
+                    />
+                  )
+                }
+                if (part.type === "task-group") {
+                  const isLast = idx === grouped.length - 1
+                  const isGroupStreaming = isStreaming && isLastMessage && isLast
+                  return (
+                    <AgentTaskToolsGroup
+                      key={idx}
+                      parts={part.parts}
+                      chatStatus={status}
+                      isStreaming={isGroupStreaming}
+                      subChatId={subChatId}
+                    />
+                  )
+                }
+                return renderPart(part, idx, false)
+              })
+            })()}
           </CollapsibleSteps>
         )}
 
@@ -739,7 +824,26 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
               isMobile={isMobile}
             />
           </div>
-          <AgentMessageUsage metadata={msgMetadata} isStreaming={isStreaming} isMobile={isMobile} />
+          <div className="flex items-center gap-0.5">
+            <AgentMessageUsage metadata={msgMetadata} isStreaming={isStreaming} isMobile={isMobile} />
+            {onFork && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    tabIndex={-1}
+                    className="p-1 rounded-md transition-[background-color,transform] duration-150 ease-out hover:bg-accent active:scale-[0.97]"
+                  >
+                    <MoreHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[160px]">
+                  <DropdownMenuItem onClick={() => onFork(message.id)}>
+                    Fork from here
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
       )}
 

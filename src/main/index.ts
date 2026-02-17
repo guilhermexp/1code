@@ -557,9 +557,10 @@ if (gotTheLock) {
   // App ready
   app.whenReady().then(async () => {
     // Set dev mode app name (userData path was already set before requestSingleInstanceLock)
-    if (IS_DEV) {
-      app.name = "Agents Dev"
-    }
+    // if (IS_DEV) {
+    //   app.name = "Agents Dev"
+    // }
+
 
     // Register protocol handler (must be after app is ready)
     initialRegistration = registerProtocol()

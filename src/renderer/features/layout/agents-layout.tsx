@@ -9,6 +9,9 @@ import {
   agentsSidebarWidthAtom,
   agentsSettingsDialogActiveTabAtom,
   agentsSettingsDialogOpenAtom,
+  apiKeyOnboardingCompletedAtom,
+  billingMethodAtom,
+  codexOnboardingCompletedAtom,
   isDesktopAtom,
   isFullscreenAtom,
   anthropicOnboardingCompletedAtom,
@@ -20,6 +23,7 @@ import { trpc } from "../../lib/trpc"
 import { useAgentsHotkeys } from "../agents/lib/agents-hotkeys-manager"
 import { toggleSearchAtom } from "../agents/search"
 import { ClaudeLoginModal } from "../../components/dialogs/claude-login-modal"
+import { CodexLoginModal } from "../../components/dialogs/codex-login-modal"
 import { TooltipProvider } from "../../components/ui/tooltip"
 import { ResizableSidebar } from "../../components/ui/resizable-sidebar"
 import { AgentsSidebar } from "../sidebar/agents-sidebar"
@@ -50,7 +54,7 @@ export function AgentsLayout() {
 
   // Global desktop/fullscreen state - initialized here at root level
   const [isDesktop, setIsDesktop] = useAtom(isDesktopAtom)
-  const [, setIsFullscreen] = useAtom(isFullscreenAtom)
+  const [isFullscreen, setIsFullscreen] = useAtom(isFullscreenAtom)
 
   // Initialize isDesktop on mount
   useEffect(() => {
@@ -101,6 +105,9 @@ export function AgentsLayout() {
   const setAnthropicOnboardingCompleted = useSetAtom(
     anthropicOnboardingCompletedAtom
   )
+  const setApiKeyOnboardingCompleted = useSetAtom(apiKeyOnboardingCompletedAtom)
+  const setCodexOnboardingCompleted = useSetAtom(codexOnboardingCompletedAtom)
+  const setBillingMethod = useSetAtom(billingMethodAtom)
 
   // Fetch projects to validate selectedProject exists
   const { data: projects, isLoading: isLoadingProjects } =
@@ -136,7 +143,8 @@ export function AgentsLayout() {
     setSelectedProject,
   ])
 
-  // Show/hide native traffic lights based on sidebar state
+  // Show/hide native traffic lights based on sidebar and fullscreen state
+  // This also re-syncs visibility when leaving fullscreen
   useEffect(() => {
     if (!isDesktop) return
     if (
@@ -146,7 +154,7 @@ export function AgentsLayout() {
       return
 
     window.desktopApi.setTrafficLightVisibility(sidebarOpen)
-  }, [sidebarOpen, isDesktop])
+  }, [sidebarOpen, isDesktop, isFullscreen])
 
   const setChatId = useAgentSubChatStore((state) => state.setChatId)
 
@@ -227,14 +235,24 @@ export function AgentsLayout() {
 
   // Handle sign out
   const handleSignOut = useCallback(async () => {
-    // Clear selected project and anthropic onboarding on logout
+    // Reset onboarding/provider selection state on logout.
     setSelectedProject(null)
     setSelectedChatId(null)
+    setBillingMethod(null)
     setAnthropicOnboardingCompleted(false)
+    setApiKeyOnboardingCompleted(false)
+    setCodexOnboardingCompleted(false)
     if (window.desktopApi?.logout) {
       await window.desktopApi.logout()
     }
-  }, [setSelectedProject, setSelectedChatId, setAnthropicOnboardingCompleted])
+  }, [
+    setSelectedProject,
+    setSelectedChatId,
+    setBillingMethod,
+    setAnthropicOnboardingCompleted,
+    setApiKeyOnboardingCompleted,
+    setCodexOnboardingCompleted,
+  ])
 
   // Clear sub-chat store when no chat is selected
   useEffect(() => {
@@ -275,6 +293,7 @@ export function AgentsLayout() {
       {/* Global queue processor - handles message queues for all sub-chats */}
       <QueueProcessor />
       <ClaudeLoginModal />
+      <CodexLoginModal />
       <div className="flex flex-col w-full h-full relative overflow-hidden bg-background select-none">
         {/* Windows Title Bar (only shown on Windows with frameless window) */}
         <WindowsTitleBar />
