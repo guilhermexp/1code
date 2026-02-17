@@ -136,6 +136,7 @@ import {
   pendingUserQuestionsAtom,
   planEditRefetchTriggerAtomFamily,
   planSidebarOpenAtomFamily,
+  previewCustomUrlAtomFamily,
   QUESTIONS_SKIPPED_MESSAGE,
   selectedAgentChatIdAtom,
   selectedCommitAtom,
@@ -152,7 +153,6 @@ import {
 import { BUILTIN_SLASH_COMMANDS } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
 import { OpenLocallyDialog } from "../components/open-locally-dialog"
-import { PreviewSetupHoverCard } from "../components/preview-setup-hover-card"
 import type { TextSelectionSource } from "../context/text-selection-context"
 import { TextSelectionProvider } from "../context/text-selection-context"
 import { useAgentsFileUpload, type UploadedImage } from "../hooks/use-agents-file-upload"
@@ -4740,6 +4740,11 @@ export function ChatView({
   )
   const [fileViewerPath, setFileViewerPath] = useAtom(fileViewerAtom)
   const [fileViewerDisplayMode] = useAtom(fileViewerDisplayModeAtom)
+  const previewCustomUrlAtom = useMemo(
+    () => previewCustomUrlAtomFamily(chatId),
+    [chatId],
+  )
+  const [previewCustomUrl] = useAtom(previewCustomUrlAtom)
 
   // File search dialog (Cmd+P)
   const [fileSearchOpen, setFileSearchOpen] = useAtom(fileSearchDialogOpenAtom)
@@ -7133,38 +7138,22 @@ Make sure to preserve all functionality from both branches when resolving confli
                   )}
                 </div>
                 {/* Open Preview Button - shows when preview is closed (desktop only) */}
-                {!isMobileFullscreen &&
-                  !isPreviewSidebarOpen &&
-                  (canOpenPreview ? (
-                    <Tooltip delayDuration={500}>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setIsPreviewSidebarOpen(true)}
-                          className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                          aria-label="Open preview"
-                        >
-                          <Globe className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Open preview</TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <PreviewSetupHoverCard>
-                      <span className="inline-flex ml-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled
-                          className="h-6 w-6 p-0 text-muted-foreground flex-shrink-0 rounded-md cursor-not-allowed pointer-events-none"
-                          aria-label="Preview not available"
-                        >
-                          <Globe className="h-4 w-4" />
-                        </Button>
-                      </span>
-                    </PreviewSetupHoverCard>
-                  ))}
+                {!isMobileFullscreen && !isPreviewSidebarOpen && (
+                  <Tooltip delayDuration={500}>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsPreviewSidebarOpen(true)}
+                        className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
+                        aria-label="Open preview"
+                      >
+                        <Globe className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Open preview</TooltipContent>
+                  </Tooltip>
+                )}
                 {/* Overview/Terminal Button - shows when sidebar is closed and worktree/sandbox exists (desktop only) */}
                 {!isMobileFullscreen &&
                   (worktreePath || sandboxId) && (
@@ -7475,8 +7464,8 @@ Make sure to preserve all functionality from both branches when resolving confli
           </DiffStateProvider>
         )}
 
-        {/* Preview Sidebar - hidden on mobile fullscreen and when preview is not available */}
-        {canOpenPreview && !isMobileFullscreen && (
+        {/* Preview Sidebar - hidden on mobile fullscreen */}
+        {!isMobileFullscreen && (
           <ResizableSidebar
             isOpen={isPreviewSidebarOpen}
             onClose={() => setIsPreviewSidebarOpen(false)}
@@ -7490,7 +7479,7 @@ Make sure to preserve all functionality from both branches when resolving confli
             className="bg-tl-background border-l"
             style={{ borderLeftWidth: "0.5px" }}
           >
-            {isQuickSetup ? (
+            {isQuickSetup && !previewCustomUrl ? (
               <div className="flex flex-col h-full">
                 {/* Header with close button */}
                 <div className="flex items-center justify-end px-3 h-10 bg-tl-background flex-shrink-0 border-b border-border/50">
@@ -7535,6 +7524,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                 chatId={chatId}
                 sandboxId={sandboxId}
                 port={previewPort}
+                customUrl={previewCustomUrl || undefined}
                 repository={repository}
                 hideHeader={false}
                 onClose={() => setIsPreviewSidebarOpen(false)}
