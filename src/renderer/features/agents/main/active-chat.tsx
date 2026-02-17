@@ -5477,6 +5477,13 @@ export function ChatView({
   // Check if diff sidebar can be opened (actual diff content available)
   // Desktop remote chats (sandboxId without worktree) cannot open diff sidebar - only stats in header
   const canOpenDiff = !!worktreePath || (!!sandboxId && !isDesktopApp())
+  const handleOpenPreview = useCallback(() => {
+    if (isMobileFullscreen && onOpenPreview) {
+      onOpenPreview()
+      return
+    }
+    setIsPreviewSidebarOpen(true)
+  }, [isMobileFullscreen, onOpenPreview, setIsPreviewSidebarOpen])
 
   // Create list of subchats with changed files for filtering
   // Only include subchats that have uncommitted changes, sorted by most recent first
@@ -5514,12 +5521,8 @@ export function ChatView({
     return result
   }, [allSubChats, subChatFiles])
 
-  // Close preview sidebar if preview becomes unavailable
-  useEffect(() => {
-    if (!canOpenPreview && isPreviewSidebarOpen) {
-      setIsPreviewSidebarOpen(false)
-    }
-  }, [canOpenPreview, isPreviewSidebarOpen, setIsPreviewSidebarOpen])
+  // Keep preview sidebar state stable even when preview capability changes.
+  // Users can still open the panel to configure preview or use a custom URL.
 
   // Note: We no longer forcibly close diff sidebar when canOpenDiff is false.
   // The sidebar render is guarded by canOpenDiff, so it naturally hides.
@@ -7071,7 +7074,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                     <MobileChatHeader
                       onCreateNew={handleCreateNewSubChat}
                       onBackToChats={onBackToChats}
-                      onOpenPreview={onOpenPreview}
+                      onOpenPreview={handleOpenPreview}
                       canOpenPreview={canOpenPreview}
                       onOpenDiff={onOpenDiff}
                       canOpenDiff={canShowDiffButton}
@@ -7144,7 +7147,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => setIsPreviewSidebarOpen(true)}
+                        onClick={handleOpenPreview}
                         className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
                         aria-label="Open preview"
                       >
@@ -7479,57 +7482,15 @@ Make sure to preserve all functionality from both branches when resolving confli
             className="bg-tl-background border-l"
             style={{ borderLeftWidth: "0.5px" }}
           >
-            {isQuickSetup && !previewCustomUrl ? (
-              <div className="flex flex-col h-full">
-                {/* Header with close button */}
-                <div className="flex items-center justify-end px-3 h-10 bg-tl-background flex-shrink-0 border-b border-border/50">
-                  <Button
-                    variant="ghost"
-                    className="h-7 w-7 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
-                    onClick={() => setIsPreviewSidebarOpen(false)}
-                  >
-                    <IconCloseSidebarRight className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                </div>
-                {/* Content */}
-                <div className="flex flex-col items-center justify-center flex-1 p-6 text-center">
-                  <div className="text-muted-foreground mb-4">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="48"
-                      height="48"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="opacity-50"
-                    >
-                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                      <line x1="8" y1="21" x2="16" y2="21" />
-                      <line x1="12" y1="17" x2="12" y2="21" />
-                    </svg>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Preview not available
-                  </p>
-                  <p className="text-xs text-muted-foreground/70 max-w-[200px]">
-                    Set up this repository to enable live preview
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <AgentPreview
-                chatId={chatId}
-                sandboxId={sandboxId}
-                port={previewPort}
-                customUrl={previewCustomUrl || undefined}
-                repository={repository}
-                hideHeader={false}
-                onClose={() => setIsPreviewSidebarOpen(false)}
-              />
-            )}
+            <AgentPreview
+              chatId={chatId}
+              sandboxId={sandboxId}
+              port={previewPort}
+              customUrl={previewCustomUrl || undefined}
+              repository={repository}
+              hideHeader={false}
+              onClose={() => setIsPreviewSidebarOpen(false)}
+            />
           </ResizableSidebar>
         )}
 

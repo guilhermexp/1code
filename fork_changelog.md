@@ -1,5 +1,36 @@
 # Fork Changelog
 
+## 2026-02-17 - Post-upstream sync incident (preview abriu sem URL bar/controles)
+
+### Symptom
+- Botao de mundo presente no header, mas o painel de preview abriu sem a barra de URL e sem controles customizados.
+- Na pratica, o usuario via um estado reduzido/placeholder em vez do painel completo que ja existia no fork.
+
+### Root Cause (fork context)
+- Durante ajustes pos-sync do upstream em `active-chat.tsx`, o bloco do Preview Sidebar passou a usar caminho condicional de quick setup com placeholder.
+- Esse fluxo substituiu a renderizacao direta de `AgentPreview` em parte dos cenarios e removeu a UI completa (URL bar, navegacao, controles de preview).
+
+### Stable Fix applied
+- Restaurado o comportamento do fork:
+  - Botao de mundo mantido no header original em `active-chat.tsx`.
+  - Clique do botao abre o **mesmo painel existente** (sem criar preview novo).
+  - Preview Sidebar volta a renderizar `AgentPreview` (com `hideHeader={false}`) para manter URL bar e controles.
+- Mantido suporte a URL customizada por chat via `previewCustomUrlAtomFamily(chatId)`.
+
+### Files touched
+- `src/renderer/features/agents/main/active-chat.tsx`
+- `src/renderer/features/agents/ui/sub-chat-selector.tsx` (rollback do botao de preview adicionado fora do layout original)
+
+### Preventive checklist for next upstream sync
+- Validar no desktop:
+  - botao de mundo aparece no header principal do chat;
+  - ao clicar, abre painel com URL bar e controles (nao placeholder).
+- Em `src/renderer/features/agents/main/active-chat.tsx`, preservar estes invariantes:
+  - o Preview Sidebar renderiza `AgentPreview` com `hideHeader={false}`;
+  - `customUrl` continua vindo de `previewCustomUrlAtomFamily(chatId)`;
+  - o clique do botao de mundo abre `setIsPreviewSidebarOpen(true)` (fluxo desktop).
+- Se upstream reintroduzir bloqueio por quick setup no sidebar, manter no minimo fallback para `AgentPreview` quando houver URL customizada/localhost.
+
 ## 2026-02-12 - Post-upstream sync note (preview logs noise)
 
 ### Symptom
@@ -606,4 +637,3 @@ Todas as mudancas sao **aditivas** e nao quebram compatibilidade com o upstream.
 
 - Sync result: merged
 - Last synced upstream commit: ef2e48e
-
