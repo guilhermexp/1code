@@ -7131,11 +7131,10 @@ Make sure to preserve all functionality from both branches when resolving confli
                     </>
                   )}
                 </div>
-                {/* Open Preview Button - shows when preview is closed (desktop only, local mode only) */}
+                {/* Open Preview Button - shows when preview is closed (desktop only) */}
                 {!isMobileFullscreen &&
                   !isPreviewSidebarOpen &&
                   sandboxId &&
-                  chatSourceMode === "local" &&
                   (canOpenPreview ? (
                     <Tooltip delayDuration={500}>
                       <TooltipTrigger asChild>

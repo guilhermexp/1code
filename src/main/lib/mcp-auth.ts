@@ -55,7 +55,7 @@ export async function fetchMcpTools(
     console.log(`[MCP] Fetched ${tools.length} tools via SDK`);
     return tools.map(t => ({ name: t.name, description: t.description }));
   } catch (error) {
-    console.error('[MCP] Failed to fetch tools:', error);
+    logMcpFetchFailure("Failed to fetch tools", error);
     return [];
   } finally {
     // Clean up the connection
@@ -116,7 +116,14 @@ export async function fetchMcpToolsStdio(config: {
     transport = new StdioClientTransport({
       command: config.command,
       args: config.args,
-      env: { ...safeEnv, ...config.env },
+      env: {
+        ...safeEnv,
+        // Reduce npm noise for npx-backed MCP servers.
+        npm_config_loglevel: "error",
+        npm_config_update_notifier: "false",
+        NO_UPDATE_NOTIFIER: "1",
+        ...config.env,
+      },
     });
 
     await client.connect(transport);
@@ -126,7 +133,7 @@ export async function fetchMcpToolsStdio(config: {
     console.log(`[MCP] Fetched ${tools.length} tools via stdio`);
     return tools.map(t => ({ name: t.name, description: t.description }));
   } catch (error) {
-    console.error('[MCP] Failed to fetch tools via stdio:', error);
+    logMcpFetchFailure("Failed to fetch tools via stdio", error);
     return [];
   } finally {
     try {
@@ -137,6 +144,49 @@ export async function fetchMcpToolsStdio(config: {
       // Ignore close errors
     }
   }
+}
+
+const MCP_ERROR_THROTTLE_WINDOW_MS = 60_000;
+const recentMcpErrors = new Map<string, number>();
+
+function getMcpErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function isExpectedMcpFetchError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("invalid_token") ||
+    normalized.includes("missing or invalid access token") ||
+    normalized.includes("e404") ||
+    normalized.includes("not found - get https://registry.npmjs.org/") ||
+    normalized.includes("connection closed") ||
+    normalized.includes("access token expired or revoked")
+  );
+}
+
+function shouldLogMcpError(key: string): boolean {
+  const now = Date.now();
+  const last = recentMcpErrors.get(key);
+  if (last && now - last < MCP_ERROR_THROTTLE_WINDOW_MS) {
+    return false;
+  }
+  recentMcpErrors.set(key, now);
+  return true;
+}
+
+function logMcpFetchFailure(scope: string, error: unknown): void {
+  const message = getMcpErrorMessage(error);
+  const key = `${scope}:${message}`;
+  if (!shouldLogMcpError(key)) return;
+
+  if (isExpectedMcpFetchError(message)) {
+    console.warn(`[MCP] ${scope}: ${message}`);
+    return;
+  }
+
+  console.error(`[MCP] ${scope}:`, error);
 }
 
 import { AUTH_SERVER_PORT, IS_DEV } from '../constants';
