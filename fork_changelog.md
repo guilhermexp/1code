@@ -529,3 +529,81 @@ Todas as mudancas sao **aditivas** e nao quebram compatibilidade com o upstream.
 
 - Sync result: merged
 - Last synced upstream commit: aad4b92
+## 2026-02-17T06:08:05Z
+
+- Branch: main
+- HEAD: 7d3f57d
+- Upstream base: upstream/main
+- Previous synced upstream commit (from changelog): aad4b92
+- Target upstream commit for this run: ef2e48e
+- Private commits: 65
+- Commit list:
+  - 7d3f57d Add token refresh on startup with ensureAuthenticated
+  - 9a0730d Force bun build before mac package
+  - f9e2965 Refinar logs preview e botão Send
+  - 42ad8c4 Garantir alternância completa de idi
+  - 14cc7e3 chore(sync): merge upstream/main preserving local customizations
+  - 6ab0ee9 Add OAuth request logging
+  - 4c8485d Fix bun dev commit issue
+  - d7d8eed Hide component when React disabled
+  - cd82d44 Investigate preview logs errors
+  - dc505fb Update agent-preview.tsx
+  - 03dabfb Remove React logs from UI
+  - 62a2701 Verificar acesso a páginas externas
+  - 4482998 Install inspector and streamline log
+  - f0fc62a Add Chromium sandbox preview
+  - 4dd3bc0 update
+  - df1aff2 chore(sync): merge upstream/main preserving local customizations
+  - 0564369 Fix static server binding to localhost
+  - 6a20194 feat: Capture console logs from preview iframe
+  - 66e6cce Fix preview login in production by serving renderer via HTTP
+  - 196da50 Corrige captura Reactgrab nos pré-⁠
+  - 3b660b6 Fix reactgrab preview path capture
+  - 4a291a1 chore(sync): merge upstream/main preserving local customizations
+  - 799c7c2 Sync fork with upstream safely
+  - 7c17ef8 Update main.ts
+  - 3b474e6 Update fork_changelog.md
+  - 761144a Update index.ts
+  - 86db81c Update bun.lock
+  - c478519 Update fork_changelog.md
+  - 806c62c Merge upstream/main (v0.0.51-v0.0.54) preserving local changes
+  - 3df8be3 .
+  - 834c16c deply
+  - 5a9dee1 Merge upstream/main (v0.0.49-v0.0.50) preserving local changes
+  - df1bb4d Update bun.lock
+  - 9eccf5d Merge upstream/main (v0.0.45-v0.0.48)
+  - ac96957 Update new-chat-form.tsx
+  - 376a9bf Update external.ts
+  - 3ad2c7f Update package.json
+  - a93d882 Delete bun.lockb
+  - 50bb240 Update active-chat.tsx
+  - 24aaf27 Update resizable-sidebar.tsx
+  - 6a7bc25 Update claude-login-modal.tsx
+  - ebd6424 upstrem fetch 25/01
+  - 5068f3a Update bun.lock
+  - 59e4ede Merge upstream v0.0.33-v0.0.44: Worktree names, branch selection, MCP OAuth, slash commands fixes
+  - 2d0df14 Add cache clearing, project action buttons, and update clone path
+  - aca03c0 Close search popover on sub-chat selection
+  - 3a5a44e ``` Improve preview iframe CSP and add URL history
+  - 2075747 Merge upstream v0.0.30-v0.0.32: Custom commands, Offline Mode, MCP Auth
+  - faa4c9c fix: Restaura importação de previewCustomUrlAtomFamily
+  - bb9e4d9 Merge upstream updates from 21st-dev/1code
+  - 3adcea4 feat: Improve Inspector Mode injection and preview functionality
+  - 7efba20 fix: Inject inspector via DOM instead of webContents
+  - 74853c0 feat: Auto-inject Inspector Mode using Electron privileges
+  - d0ed4f5 refactor: Simplify Inspector Mode to plugin-only approach
+  - 88d735f feat: Add Inspector Mode for React component detection in preview
+  - 909ff45 fix: Allow localhost URLs in preview iframe by updating CSP
+  - dc21190 fix: Prevent preview sidebar from auto-closing
+  - 2bf7356 feat: Add always-visible preview button in toolbar
+  - e433f94 fix: Resolve React DOM and Motion deprecation warnings
+  - a839b55 fix: Prevent ReadableStream enqueue on closed controller
+  - e4bc430 fix: Add missing selectedLanguageAtom export after merge
+  - 48c3c24 Merge upstream v0.0.24 - Add GitHub clone feature, search, keep-alive tabs
+  - 29caca6 Create UI-UX-SYSTEM-DOCUMENTATION.md
+  - a9765e6 Add localhost URL click-to-preview in chat messages
+  - b0a4840 initfork.
+
+- Sync result: merged
+- Last synced upstream commit: ef2e48e
+
