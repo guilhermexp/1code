@@ -7253,13 +7253,8 @@ Make sure to preserve all functionality from both branches when resolving confli
                 const isActive = subChatId === activeSubChatId
                 const isFirstSubChat = getFirstSubChatId(agentSubChats) === subChatId
 
-                // Defense in depth: double-check workspace ownership
-                // Use agentSubChats (server data) as primary source, fall back to allSubChats for optimistic updates
-                // This fixes the race condition where allSubChats is empty after setChatId but before setAllSubChats
-                const belongsToWorkspace = agentSubChats.some(sc => sc.id === subChatId) ||
-                                          allSubChats.some(sc => sc.id === subChatId)
-
-                  // Defense in depth: ensure active sub-chat belongs to current workspace
+                  // Defense in depth: ensure active sub-chat belongs to current workspace.
+                  // Use agentSubChats (server data) as primary source and allSubChats as optimistic fallback.
                   const belongsToWorkspace =
                     agentSubChats.some((sc) => sc.id === subChatId) ||
                     allSubChats.some((sc) => sc.id === subChatId)
