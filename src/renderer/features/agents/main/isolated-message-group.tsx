@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client"
 
 import { createContext, memo, useMemo } from "react"

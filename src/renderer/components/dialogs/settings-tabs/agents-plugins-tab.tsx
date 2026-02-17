@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { useSetAtom } from "jotai"
 import { useListKeyboardNav } from "./use-list-keyboard-nav"

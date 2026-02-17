@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { GitHubStatus } from "../../../main/lib/git/github/types";
 import { trpc } from "../../lib/trpc";
 

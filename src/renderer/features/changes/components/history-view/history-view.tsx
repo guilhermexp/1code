@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { memo, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "../../../../lib/trpc";
 import { formatRelativeDate } from "../../utils/date";

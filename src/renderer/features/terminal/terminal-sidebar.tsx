@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useCallback, useMemo, useRef, useState } from "react"
 import { useAtom, useAtomValue } from "jotai"
 import { useTheme } from "next-themes"

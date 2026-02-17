@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { ChatTransport, UIMessage } from "ai"
 import { toast } from "sonner"
 import {

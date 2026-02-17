@@ -1,7 +1,6 @@
-// @ts-nocheck
 "use client"
 
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
 // import Image from "next/image" // Desktop doesn't use next/image
 import {
@@ -16,7 +15,7 @@ const agentsSettingsDialogActiveTabAtom = atom<string | null>(null)
 import { GitHubIcon } from "../../../icons"
 
 interface PreviewSetupHoverCardProps {
-  children: React.ReactNode
+  children: ReactNode
 }
 
 export function PreviewSetupHoverCard({ children }: PreviewSetupHoverCardProps) {
@@ -92,4 +91,3 @@ export function PreviewSetupHoverCard({ children }: PreviewSetupHoverCardProps) 
     </HoverCard>
   )
 }
-

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"

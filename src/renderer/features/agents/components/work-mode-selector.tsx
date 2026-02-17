@@ -1,7 +1,7 @@
-// @ts-nocheck
 "use client"
 
 import { useState } from "react"
+import type { ComponentType } from "react"
 import { GitBranch } from "lucide-react"
 import {
   Popover,
@@ -18,7 +18,17 @@ interface WorkModeSelectorProps {
   disabled?: boolean
 }
 
-const workModeOptions = [
+type SelectorMode = WorkMode | "sandbox"
+
+interface WorkModeOption {
+  id: SelectorMode
+  label: string
+  icon: ComponentType<{ className?: string }>
+  disabled?: boolean
+  soon?: boolean
+}
+
+const workModeOptions: WorkModeOption[] = [
   {
     id: "local" as const,
     label: "Local",
@@ -30,7 +40,7 @@ const workModeOptions = [
     icon: GitBranch,
   },
   {
-    id: "sandbox" as const,
+    id: "sandbox",
     label: "Background",
     icon: CloudIcon,
     disabled: true,
@@ -74,7 +84,9 @@ export function WorkModeSelector({
               key={option.id}
               onClick={() => {
                 if (isDisabled) return
-                onChange(option.id)
+                if (option.id !== "sandbox") {
+                  onChange(option.id)
+                }
                 setOpen(false)
               }}
               disabled={isDisabled}
