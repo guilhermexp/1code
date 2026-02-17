@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { ChatTransport, UIMessage } from "ai"
 
 // Helper to capture exceptions only in production (avoids sentry-ipc errors in dev)

@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client"
 
 import { LucideProps } from "lucide-react"

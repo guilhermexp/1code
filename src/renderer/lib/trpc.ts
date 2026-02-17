@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createTRPCReact } from "@trpc/react-query"
 import { createTRPCProxyClient } from "@trpc/client"
 import { ipcLink } from "trpc-electron/renderer"

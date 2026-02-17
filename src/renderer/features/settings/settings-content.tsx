@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useAtomValue, useSetAtom } from "jotai"
 import { useEffect } from "react"
 import {

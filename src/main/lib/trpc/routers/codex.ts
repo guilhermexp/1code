@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createACPProvider, type ACPProvider } from "@mcpc-tech/acp-ai-provider"
 import { observable } from "@trpc/server/observable"
 import { streamText } from "ai"

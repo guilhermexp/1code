@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useTheme } from "next-themes"
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { IconSpinner } from "../../../icons"

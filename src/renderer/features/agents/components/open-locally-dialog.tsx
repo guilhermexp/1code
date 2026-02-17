@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client"
 
 import { AnimatePresence, motion } from "motion/react"

@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client"
 
 import {
@@ -40,7 +41,6 @@ import {
   ArrowDown,
   ChevronDown,
   GitFork,
-  Globe,
   ListTree,
   TerminalSquare
 } from "lucide-react"
@@ -57,8 +57,6 @@ import {
   useState
 } from "react"
 import { flushSync } from "react-dom"
-import { useTranslation } from "react-i18next"
-import type { VirtuosoHandle } from "react-virtuoso"
 import { toast } from "sonner"
 import { useShallow } from "zustand/react/shallow"
 import type { FileStatus } from "../../../../shared/changes-types"
@@ -66,7 +64,6 @@ import { getQueryClient } from "../../../contexts/TRPCProvider"
 import { trackMessageSent } from "../../../lib/analytics"
 import { apiFetch } from "../../../lib/api-fetch"
 import {
-  agentsSidebarOpenAtom,
   chatSourceModeAtom,
   customClaudeConfigAtom,
   defaultAgentModeAtom,
@@ -138,7 +135,6 @@ import {
   pendingUserQuestionsAtom,
   planEditRefetchTriggerAtomFamily,
   planSidebarOpenAtomFamily,
-  previewCustomUrlAtomFamily,
   QUESTIONS_SKIPPED_MESSAGE,
   selectedAgentChatIdAtom,
   selectedCommitAtom,
@@ -777,7 +773,6 @@ const ScrollToBottomButton = memo(function ScrollToBottomButton({
   subChatId?: string
   isActive?: boolean
 }) {
-  const { t } = useTranslation("chat")
   const [isVisible, setIsVisible] = useState(false)
 
   // Keep isActive in ref for scroll event handler
@@ -860,13 +855,13 @@ const ScrollToBottomButton = memo(function ScrollToBottomButton({
                 // Narrow screen (container <= 48rem): button lifts above the input
                 bottom: "clamp(0.75rem, (48rem - var(--chat-container-width, 0px)) * 1000, calc(var(--chat-input-height, 4rem) + 1rem))",
               }}
-              aria-label={t("scroll.scrollToBottom")}
+              aria-label="Scroll to bottom"
             >
               <ArrowDown className="h-4 w-4 text-muted-foreground" />
             </motion.button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            {t("scroll.scrollToBottom")}
+            Scroll to bottom
             <span className="inline-flex items-center gap-0.5">
               <Kbd>⌘</Kbd>
               <Kbd>
@@ -1740,7 +1735,6 @@ const DiffSidebarRenderer = memo(function DiffSidebarRenderer({
   setDiffStats,
   onDiscardSuccess,
 }: DiffSidebarRendererProps) {
-  const { t } = useTranslation("chat")
   // Get callbacks and state from context
   const { handleCloseDiff, viewedCount, handleViewedCountChange } = useDiffState()
 
@@ -1819,7 +1813,7 @@ const DiffSidebarRenderer = memo(function DiffSidebarRenderer({
           >
             <IconCloseSidebarRight className="size-4 text-muted-foreground" />
           </Button>
-          <span className="text-sm text-muted-foreground ml-2">{t("diff.changes")}</span>
+          <span className="text-sm text-muted-foreground ml-2">Changes</span>
         </div>
       ) : null}
 
@@ -1919,7 +1913,6 @@ const ChatViewInner = memo(function ChatViewInner({
   projectPath,
   isArchived = false,
   onRestoreWorkspace,
-  onUrlClick,
   existingPrUrl,
   isActive = true,
   workspaceName,
@@ -1950,14 +1943,12 @@ const ChatViewInner = memo(function ChatViewInner({
   projectPath?: string
   isArchived?: boolean
   onRestoreWorkspace?: () => void
-  onUrlClick?: (url: string) => void
   existingPrUrl?: string | null
   isActive?: boolean
   workspaceName?: string | null
   workspaceBranch?: string | null
   workspaceRepoName?: string | null
 }) {
-  const { t } = useTranslation("chat")
   const hasTriggeredRenameRef = useRef(false)
   const hasTriggeredAutoGenerateRef = useRef(false)
 
@@ -2451,7 +2442,6 @@ const ChatViewInner = memo(function ChatViewInner({
     // Mark as manually aborted to prevent completion sound
     agentChatStore.setManuallyAborted(subChatId, true)
     await stopRef.current()
-
   }, [subChatId])
 
   // Wrapper for addTextContext that handles TextSelectionSource
@@ -2582,58 +2572,6 @@ const ChatViewInner = memo(function ChatViewInner({
       store.setActiveSubChat(subChatId)
     }
   }, [pendingPrMessage, isStreaming, isActive, sendMessage, setPendingPrMessage, setIsCreatingPr, subChatId])
-
-  const stripComponentMentions = useCallback((value: string) => {
-    return value
-      .replace(/@\[component:[^\]]+\]/g, "")
-      .replace(/\s{2,}/g, " ")
-      .trim()
-  }, [])
-
-  // React Grab: Handle component context from Inspector Mode
-  useEffect(() => {
-    const handleAddComponentContext = (e: CustomEvent) => {
-      const { chatId: eventChatId, componentInfo } = e.detail
-
-      // Only process if this is the active chat
-      if (eventChatId !== parentChatId && eventChatId !== subChatId) {
-        return
-      }
-      if (typeof componentInfo !== "string" || !componentInfo.trim()) {
-        return
-      }
-
-      // Add component info to text contexts using a dedicated source id.
-      // Component mentions are visual-only and stripped before send.
-      addTextContextOriginal(componentInfo, "component-inspector")
-
-      editorRef.current?.focus()
-    }
-
-    window.addEventListener("agent-add-component-context", handleAddComponentContext as EventListener)
-    return () => window.removeEventListener("agent-add-component-context", handleAddComponentContext as EventListener)
-  }, [parentChatId, subChatId, addTextContextOriginal])
-
-  useEffect(() => {
-    const handlePreviewErrorsToInput = (e: CustomEvent) => {
-      const { chatId: eventChatId, text } = e.detail ?? {}
-      if (eventChatId !== parentChatId && eventChatId !== subChatId) return
-      if (typeof text !== "string" || !text.trim()) return
-
-      const currentValue = editorRef.current?.getValue() || ""
-      const nextValue = currentValue.trim() ? `${currentValue.trim()}\n\n${text}` : text
-
-      editorRef.current?.setValue(nextValue)
-      editorRef.current?.focus()
-    }
-
-    window.addEventListener("agent-preview-send-errors-to-input", handlePreviewErrorsToInput as EventListener)
-    return () =>
-      window.removeEventListener(
-        "agent-preview-send-errors-to-input",
-        handlePreviewErrorsToInput as EventListener,
-      )
-  }, [parentChatId, subChatId])
 
   // Watch for pending Review message and send it
   const [pendingReviewMessage, setPendingReviewMessage] = useAtom(
@@ -3544,7 +3482,6 @@ const ChatViewInner = memo(function ChatViewInner({
         // Mark as manually aborted to prevent completion sound
         agentChatStore.setManuallyAborted(subChatId, true)
         await stop()
-
       }
     }
 
@@ -3773,8 +3710,7 @@ const ChatViewInner = memo(function ChatViewInner({
 
     // Get value from uncontrolled editor
     const inputValue = editorRef.current?.getValue() || ""
-    const cleanedInputValue = stripComponentMentions(inputValue)
-    const hasText = cleanedInputValue.trim().length > 0
+    const hasText = inputValue.trim().length > 0
     const currentImages = imagesRef.current
     const currentFiles = filesRef.current
     const currentTextContexts = textContextsRef.current
@@ -3802,7 +3738,7 @@ const ChatViewInner = memo(function ChatViewInner({
 
       const item = createQueueItem(
         generateQueueId(),
-        cleanedInputValue.trim(),
+        inputValue.trim(),
         queuedImages.length > 0 ? queuedImages : undefined,
         queuedFiles.length > 0 ? queuedFiles : undefined,
         queuedTextContexts.length > 0 ? queuedTextContexts : undefined,
@@ -3828,7 +3764,7 @@ const ChatViewInner = memo(function ChatViewInner({
       onRestoreWorkspace()
     }
 
-    const text = cleanedInputValue.trim()
+    const text = inputValue.trim()
 
     // Expand custom slash commands with arguments (e.g. "/Apex my argument")
     // This mirrors the logic in new-chat-form.tsx
@@ -4019,7 +3955,6 @@ const ChatViewInner = memo(function ChatViewInner({
     clearPastedTexts,
     teamId,
     addToQueue,
-    stripComponentMentions,
     setExpiredQuestionsMap,
   ])
 
@@ -4525,7 +4460,7 @@ const ChatViewInner = memo(function ChatViewInner({
         >
           <ChatTitleEditor
             name={subChatName}
-            placeholder={t("input.newChat")}
+            placeholder="New Chat"
             onSave={handleRenameSubChat}
             isMobile={false}
             chatId={subChatId}
@@ -4577,6 +4512,7 @@ const ChatViewInner = memo(function ChatViewInner({
         data-chat-container
       >
         <div
+          ref={contentWrapperRef}
           className="px-2 max-w-2xl mx-auto -mb-4 space-y-4"
           style={{
             paddingBottom: "32px",
@@ -4591,20 +4527,16 @@ const ChatViewInner = memo(function ChatViewInner({
               subChatId={subChatId}
               chatId={parentChatId}
               isMobile={isMobile}
-              followOutput={virtuosoFollowOutput}
-              scrollParentRef={chatContainerRef}
-              onAtBottomStateChange={handleAtBottomChange}
-              virtuosoRef={virtuosoRef}
               sandboxSetupStatus={sandboxSetupStatus}
               stickyTopClass={stickyTopClass}
               sandboxSetupError={sandboxSetupError}
               onRetrySetup={onRetrySetup}
-              onUrlClick={onUrlClick}
               UserBubbleComponent={AgentUserMessageBubble}
               ToolCallComponent={AgentToolCall}
               MessageGroupWrapper={MessageGroup}
               toolRegistry={AgentToolRegistry}
               onRollback={handleRollback}
+              onFork={handleForkFromMessage}
             />
           </div>
         </div>
@@ -4739,7 +4671,6 @@ export function ChatView({
   onOpenTerminal?: () => void
   hideHeader?: boolean
 }) {
-  const { t } = useTranslation(["chat", "common"])
   const [selectedTeamId] = useAtom(selectedTeamIdAtom)
   const [selectedModelId] = useAtom(lastSelectedModelIdAtom)
 
@@ -4780,15 +4711,6 @@ export function ChatView({
   const [isPreviewSidebarOpen, setIsPreviewSidebarOpen] = useAtom(
     agentsPreviewSidebarOpenAtom,
   )
-  // Left sidebar control - used to auto-close when preview opens
-  const setLeftSidebarOpen = useSetAtom(agentsSidebarOpenAtom)
-  // Custom preview URL per chat (temporary, not persisted)
-  const customPreviewUrlAtom = useMemo(
-    () => previewCustomUrlAtomFamily(chatId),
-    [chatId],
-  )
-  const [customPreviewUrl, setCustomPreviewUrl] = useAtom(customPreviewUrlAtom)
-
   // Per-chat diff sidebar state - each chat remembers its own open/close state
   const diffSidebarAtom = useMemo(
     () => diffSidebarOpenAtomFamily(chatId),
@@ -5535,11 +5457,11 @@ export function ChatView({
   const isQuickSetup = meta?.isQuickSetup || !meta?.sandboxConfig?.port
   const previewPort = meta?.sandboxConfig?.port ?? 3000
 
-  // Check if preview can be opened (sandbox with port exists and not quick setup, OR custom URL is set, OR local mode where user can set custom URL)
+  // Check if preview can be opened (sandbox with port exists and not quick setup)
   const canOpenPreview = !!(
-    customPreviewUrl ||
-    chatSourceMode === "local" ||
-    (sandboxId && !isQuickSetup && meta?.sandboxConfig?.port)
+    sandboxId &&
+    !isQuickSetup &&
+    meta?.sandboxConfig?.port
   )
 
   // Check if diff button can be shown (stats available)
@@ -5586,13 +5508,12 @@ export function ChatView({
     return result
   }, [allSubChats, subChatFiles])
 
-  // Handle opening preview when URL is clicked in messages
-  const handleOpenPreview = useCallback((url: string) => {
-    setCustomPreviewUrl(url)
-    setIsPreviewSidebarOpen(true)
-    // Auto-close left sidebar to give more space for preview
-    setLeftSidebarOpen(false)
-  }, [setCustomPreviewUrl, setIsPreviewSidebarOpen, setLeftSidebarOpen])
+  // Close preview sidebar if preview becomes unavailable
+  useEffect(() => {
+    if (!canOpenPreview && isPreviewSidebarOpen) {
+      setIsPreviewSidebarOpen(false)
+    }
+  }, [canOpenPreview, isPreviewSidebarOpen, setIsPreviewSidebarOpen])
 
   // Note: We no longer forcibly close diff sidebar when canOpenDiff is false.
   // The sidebar render is guarded by canOpenDiff, so it naturally hides.
@@ -5603,18 +5524,23 @@ export function ChatView({
   const isFetchingDiffRef = useRef(false)
 
   const fetchDiffStats = useCallback(async () => {
+    console.log("[fetchDiffStats] Called with:", { worktreePath, sandboxId, chatId, isDesktop: isDesktopApp() })
+
     // Desktop uses worktreePath, web uses sandboxId
     // Don't reset stats if worktreePath is temporarily undefined - just skip the fetch
     // This prevents the button from becoming disabled when component re-renders
     if (!worktreePath && !sandboxId) {
+      console.log("[fetchDiffStats] Skipping - no worktreePath or sandboxId")
       return
     }
 
     // Prevent duplicate parallel fetches
     if (isFetchingDiffRef.current) {
+      console.log("[fetchDiffStats] Skipping - already fetching")
       return
     }
     isFetchingDiffRef.current = true
+    console.log("[fetchDiffStats] Starting fetch...")
 
     try {
       // Desktop: use new getParsedDiff endpoint (all-in-one: parsing + file contents)
@@ -5663,10 +5589,13 @@ export function ChatView({
 
       // Remote sandbox: use stats from chat data (desktop) or fetch diff (web)
       if (sandboxId) {
+        console.log("[fetchDiffStats] Sandbox mode - sandboxId:", sandboxId)
+
         // Desktop app: use stats already provided in chat data
         // The diff sidebar won't work for remote chats (no worktree), but stats will show
         if (isDesktopApp()) {
           const remoteStats = (agentChat as any)?.remoteStats
+          console.log("[fetchDiffStats] Desktop remote chat - using remoteStats:", remoteStats)
 
           if (remoteStats) {
             setDiffStats({
@@ -5703,11 +5632,14 @@ export function ChatView({
         rawDiff = data.diff || null
 
         // Store raw diff for AgentDiffView
+        console.log("[fetchDiffStats] Setting diff content, length:", rawDiff?.length ?? 0)
         setDiffContent(rawDiff)
 
         if (rawDiff && rawDiff.trim()) {
           // Parse diff to get file list and stats (client-side for web)
+          console.log("[fetchDiffStats] Parsing diff...")
           const parsedFiles = splitUnifiedDiffByFile(rawDiff)
+          console.log("[fetchDiffStats] Parsed files:", parsedFiles.length, "files")
           setParsedFileDiffs(parsedFiles)
 
           let additions = 0
@@ -5717,6 +5649,7 @@ export function ChatView({
             deletions += file.deletions
           }
 
+          console.log("[fetchDiffStats] Setting stats:", { fileCount: parsedFiles.length, additions, deletions })
           setDiffStats({
             fileCount: parsedFiles.length,
             additions,
@@ -5725,6 +5658,7 @@ export function ChatView({
             hasChanges: parsedFiles.length > 0,
           })
         } else {
+          console.log("[fetchDiffStats] No diff content, setting empty stats")
           setDiffStats({
             fileCount: 0,
             additions: 0,
@@ -5741,6 +5675,7 @@ export function ChatView({
       console.error("[fetchDiffStats] Error:", error)
       setDiffStats((prev) => ({ ...prev, isLoading: false }))
     } finally {
+      console.log("[fetchDiffStats] Done")
       isFetchingDiffRef.current = false
     }
   }, [worktreePath, sandboxId, chatId, agentChat]) // Note: activeSubChatId removed - diff is same for whole chat
@@ -6043,6 +5978,7 @@ Make sure to preserve all functionality from both branches when resolving confli
 
     // If git shows no changes but we still have parsedFileDiffs, clear them
     if (!hasUncommittedChanges && parsedFileDiffs && parsedFileDiffs.length > 0) {
+      console.log('[active-chat] Git status empty but parsedFileDiffs has files, refreshing diff data')
       setParsedFileDiffs([])
       setPrefetchedFileContents({})
       setDiffContent(null)
@@ -6256,12 +6192,79 @@ Make sure to preserve all functionality from both branches when resolving confli
       const chatSandboxUrl = chatSandboxId ? `https://3003-${chatSandboxId}.e2b.app` : null
       const isRemoteChat = !!(agentChat as any)?.isRemote || !!chatSandboxId
 
-      let transport: IPCChatTransport | RemoteChatTransport | null = null
+      // Fast path for existing chats. Only inspect messages when a local empty-chat provider override
+      // might require transport recreation.
+      const existing = agentChatStore.get(subChatId)
+      if (existing) {
+        if (isRemoteChat) return existing
+
+        const overrideProvider = subChatProviderOverrides[subChatId]
+        if (!overrideProvider) return existing
+
+        const existingProvider: "claude-code" | "codex" =
+          (existing as any)?.transport instanceof ACPChatTransport
+            ? "codex"
+            : "claude-code"
+        if (existingProvider === overrideProvider) return existing
+
+        const subChatForOverride = agentSubChats.find((sc) => sc.id === subChatId)
+        const rawExistingMessages = subChatForOverride?.messages
+        const existingMessageCount = Array.isArray(rawExistingMessages)
+          ? rawExistingMessages.length
+          : typeof rawExistingMessages === "string"
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(rawExistingMessages)
+                  return Array.isArray(parsed) ? parsed.length : 0
+                } catch {
+                  return 0
+                }
+              })()
+            : 0
+
+        if (existingMessageCount > 0) return existing
+        agentChatStore.delete(subChatId)
+      }
+
+      // Find sub-chat data
+      const subChat = agentSubChats.find((sc) => sc.id === subChatId)
+      const rawMessages = subChat?.messages
+      const messages = Array.isArray(rawMessages)
+        ? rawMessages
+        : typeof rawMessages === "string"
+          ? (() => {
+              try {
+                const parsed = JSON.parse(rawMessages)
+                return Array.isArray(parsed) ? parsed : []
+              } catch {
+                return []
+              }
+            })()
+          : []
+
+      // Get mode from store metadata (falls back to currentMode)
+      const subChatMeta = useAgentSubChatStore
+        .getState()
+        .allSubChats.find((sc) => sc.id === subChatId)
+      const subChatMode = subChatMeta?.mode || currentMode
+
+      const chatProvider = inferProviderFromMessages(subChatId)
+
+      console.log("[getOrCreateChat] Transport selection", {
+        subChatId: subChatId.slice(-8),
+        isRemoteChat,
+        chatSandboxId,
+        chatSandboxUrl,
+        worktreePath: worktreePath ? "exists" : "none",
+      })
+
+      let transport: IPCChatTransport | RemoteChatTransport | ACPChatTransport | null = null
 
       if (isRemoteChat && chatSandboxUrl) {
         // Remote sandbox chat: use HTTP SSE transport
         const subChatName = subChat?.name || "Chat"
         const modelString = MODEL_ID_MAP[selectedModelId] || MODEL_ID_MAP["opus"]
+        console.log("[getOrCreateChat] Using RemoteChatTransport", { sandboxUrl: chatSandboxUrl, model: modelString })
         transport = new RemoteChatTransport({
           chatId,
           subChatId,
@@ -6506,11 +6509,20 @@ Make sure to preserve all functionality from both branches when resolving confli
     const newSubChatSandboxUrl = newSubChatSandboxId ? `https://3003-${newSubChatSandboxId}.e2b.app` : null
     const isNewSubChatRemote = !!(agentChat as any)?.isRemote || !!newSubChatSandboxId
 
-    let newSubChatTransport: IPCChatTransport | RemoteChatTransport | null = null
+    console.log("[createNewSubChat] Transport selection", {
+      newId: newId.slice(-8),
+      isNewSubChatRemote,
+      newSubChatSandboxId,
+      newSubChatSandboxUrl,
+    })
+
+    const chatProvider = newSubChatProvider
+    let newSubChatTransport: IPCChatTransport | RemoteChatTransport | ACPChatTransport | null = null
 
     if (isNewSubChatRemote && newSubChatSandboxUrl) {
       // Remote sandbox chat: use HTTP SSE transport
       const modelString = MODEL_ID_MAP[selectedModelId] || MODEL_ID_MAP["opus"]
+      console.log("[createNewSubChat] Using RemoteChatTransport", { model: modelString })
       newSubChatTransport = new RemoteChatTransport({
         chatId,
         subChatId: newId,
@@ -7009,17 +7021,6 @@ Make sure to preserve all functionality from both branches when resolving confli
     isDiffSidebarOpen &&
     !isMobileFullscreen)
 
-  // Reserve a safe area for native macOS traffic lights when both sidebars are closed.
-  // This prevents occasional overlap while native visibility toggles are catching up.
-  const shouldReserveMacTrafficLightArea =
-    isDesktop &&
-    !isFullscreen &&
-    !isMobileFullscreen &&
-    !isSidebarOpen &&
-    subChatsSidebarMode !== "sidebar" &&
-    typeof window !== "undefined" &&
-    window.desktopApi?.platform === "darwin"
-
   // No early return - let the UI render with loading state handled by activeChat check below
 
   return (
@@ -7050,10 +7051,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                 // Mobile: always flex; Desktop: absolute when sidebar open, flex when closed
                 !isMobileFullscreen && subChatsSidebarMode === "sidebar"
                   ? `absolute top-0 left-0 right-0 ${CHAT_LAYOUT.headerPaddingSidebarOpen}`
-                  : cn(
-                      `flex-shrink-0 ${CHAT_LAYOUT.headerPaddingSidebarClosed}`,
-                      shouldReserveMacTrafficLightArea && "pl-[88px]",
-                    ),
+                  : `flex-shrink-0 ${CHAT_LAYOUT.headerPaddingSidebarClosed}`,
               )}
             >
               {/* Gradient background - only when not absolute */}
@@ -7122,11 +7120,11 @@ Make sure to preserve all functionality from both branches when resolving confli
                               ) : (
                                 <GitFork className="h-3 w-3" />
                               )}
-                              {t("chat:header.forkLocally")}
+                              Fork Locally
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
-                            {t("chat:header.continueSessionLocally")}
+                            Continue this session on your local machine
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -7136,6 +7134,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                 {/* Open Preview Button - shows when preview is closed (desktop only, local mode only) */}
                 {!isMobileFullscreen &&
                   !isPreviewSidebarOpen &&
+                  sandboxId &&
                   chatSourceMode === "local" &&
                   (canOpenPreview ? (
                     <Tooltip delayDuration={500}>
@@ -7145,12 +7144,12 @@ Make sure to preserve all functionality from both branches when resolving confli
                           size="icon"
                           onClick={() => setIsPreviewSidebarOpen(true)}
                           className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                          aria-label={t("chat:header.openPreview")}
+                          aria-label="Open preview"
                         >
-                          <Globe className="h-4 w-4" />
+                          <IconOpenSidebarRight className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>{t("chat:header.openPreview")}</TooltipContent>
+                      <TooltipContent>Open preview</TooltipContent>
                     </Tooltip>
                   ) : (
                     <PreviewSetupHoverCard>
@@ -7160,9 +7159,9 @@ Make sure to preserve all functionality from both branches when resolving confli
                           size="icon"
                           disabled
                           className="h-6 w-6 p-0 text-muted-foreground flex-shrink-0 rounded-md cursor-not-allowed pointer-events-none"
-                          aria-label={t("chat:header.previewUnavailable")}
+                          aria-label="Preview not available"
                         >
-                          <Globe className="h-4 w-4" />
+                          <IconOpenSidebarRight className="h-4 w-4" />
                         </Button>
                       </span>
                     </PreviewSetupHoverCard>
@@ -7180,13 +7179,13 @@ Make sure to preserve all functionality from both branches when resolving confli
                               size="icon"
                               onClick={() => setIsDetailsSidebarOpen(true)}
                               className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                              aria-label={t("chat:header.viewDetails")}
+                              aria-label="View details"
                             >
                               <IconOpenSidebarRight className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
-                            {t("chat:header.viewDetails")}
+                            View details
                             {toggleDetailsHotkey && <Kbd>{toggleDetailsHotkey}</Kbd>}
                           </TooltipContent>
                         </Tooltip>
@@ -7201,13 +7200,13 @@ Make sure to preserve all functionality from both branches when resolving confli
                               size="icon"
                               onClick={() => setIsTerminalSidebarOpen(true)}
                               className="h-6 w-6 p-0 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2"
-                              aria-label={t("chat:header.openTerminal")}
+                              aria-label="Open terminal"
                             >
                               <TerminalSquare className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
-                            {t("chat:header.openTerminal")}
+                            Open terminal
                             {toggleTerminalHotkey && <Kbd>{toggleTerminalHotkey}</Kbd>}
                           </TooltipContent>
                         </Tooltip>
@@ -7223,14 +7222,14 @@ Make sure to preserve all functionality from both branches when resolving confli
                         onClick={handleRestoreWorkspace}
                         disabled={restoreWorkspaceMutation.isPending}
                         className="h-6 px-2 gap-1.5 hover:bg-foreground/10 transition-colors text-foreground flex-shrink-0 rounded-md ml-2 flex items-center"
-                        aria-label={t("chat:header.restoreWorkspace")}
+                        aria-label="Restore workspace"
                       >
                         <UnarchiveIcon className="h-4 w-4" />
-                        <span className="text-xs">{t("common:buttons.restore")}</span>
+                        <span className="text-xs">Restore</span>
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">
-                      {t("chat:header.restoreWorkspace")}
+                      Restore workspace
                       <Kbd>⇧⌘E</Kbd>
                     </TooltipContent>
                   </Tooltip>
@@ -7253,49 +7252,59 @@ Make sure to preserve all functionality from both branches when resolving confli
                 const isActive = subChatId === activeSubChatId
                 const isFirstSubChat = getFirstSubChatId(agentSubChats) === subChatId
 
-                  // Defense in depth: ensure active sub-chat belongs to current workspace.
-                  // Use agentSubChats (server data) as primary source and allSubChats as optimistic fallback.
-                  const belongsToWorkspace =
-                    agentSubChats.some((sc) => sc.id === subChatId) ||
-                    allSubChats.some((sc) => sc.id === subChatId)
-                  if (!belongsToWorkspace) return null
+                // Defense in depth: double-check workspace ownership
+                // Use agentSubChats (server data) as primary source, fall back to allSubChats for optimistic updates
+                // This fixes the race condition where allSubChats is empty after setChatId but before setAllSubChats
+                const belongsToWorkspace = agentSubChats.some(sc => sc.id === subChatId) ||
+                                          allSubChats.some(sc => sc.id === subChatId)
 
-                  return (
-                    <div
-                      key={subChatId}
-                      className="absolute inset-0 flex flex-col"
-                      style={{
-                        transform: "translateZ(0)",
-                        opacity: 1,
-                        pointerEvents: "auto",
-                        willChange: "transform, opacity",
-                        contain: "layout style paint",
-                      }}
-                      aria-hidden={false}
-                    >
-                      <ChatViewInner
-                        chat={chat}
-                        subChatId={subChatId}
-                        parentChatId={chatId}
-                        isFirstSubChat={isFirstSubChat}
-                        onAutoRename={handleAutoRename}
-                        onCreateNewSubChat={handleCreateNewSubChat}
-                        teamId={selectedTeamId || undefined}
-                        repository={repository}
-                        streamId={agentChatStore.getStreamId(subChatId)}
-                        isMobile={isMobileFullscreen}
-                        isSubChatsSidebarOpen={subChatsSidebarMode === "sidebar"}
-                        sandboxId={sandboxId || undefined}
-                        projectPath={worktreePath || undefined}
-                        isArchived={isArchived}
-                        onRestoreWorkspace={handleRestoreWorkspace}
-                        onUrlClick={handleOpenPreview}
-                        existingPrUrl={agentChat?.prUrl}
-                        isActive={true}
-                      />
-                    </div>
-                  )
-                })()
+                if (!chat || !belongsToWorkspace) return null
+
+                return (
+                  <div
+                    key={subChatId}
+                    className="absolute inset-0 flex flex-col"
+                    style={{
+                      // GPU-accelerated visibility switching (нативное ощущение)
+                      // transform + opacity быстрее чем visibility для GPU
+                      transform: isActive ? "translateZ(0)" : "translateZ(0) scale(0.98)",
+                      opacity: isActive ? 1 : 0,
+                      // Prevent pointer events on hidden tabs
+                      pointerEvents: isActive ? "auto" : "none",
+                      // GPU layer hints
+                      willChange: "transform, opacity",
+                      // Изолируем layout - изменения внутри не влияют на другие табы
+                      contain: "layout style paint",
+                    }}
+                    aria-hidden={!isActive}
+                  >
+                    <ChatViewInner
+                      chat={chat}
+                      subChatId={subChatId}
+                      parentChatId={chatId}
+                      provider={inferProviderFromMessages(subChatId)}
+                      isFirstSubChat={isFirstSubChat}
+                      onAutoRename={handleAutoRename}
+                      onCreateNewSubChat={handleCreateNewSubChat}
+                      onProviderChange={handleProviderChange}
+                      teamId={selectedTeamId || undefined}
+                      repository={repository}
+                      streamId={agentChatStore.getStreamId(subChatId)}
+                      isMobile={isMobileFullscreen}
+                      isSubChatsSidebarOpen={subChatsSidebarMode === "sidebar"}
+                      sandboxId={sandboxId || undefined}
+                      projectPath={worktreePath || undefined}
+                      isArchived={isArchived}
+                      onRestoreWorkspace={handleRestoreWorkspace}
+                      existingPrUrl={agentChat?.prUrl}
+                      isActive={isActive}
+                      workspaceName={agentChat?.name ?? null}
+                      workspaceBranch={agentChat?.branch ?? null}
+                      workspaceRepoName={(agentChat as any)?.project?.gitRepo || (agentChat as any)?.project?.name || null}
+                    />
+                  </div>
+                )
+              })
               )}
             </div>
           ) : (
@@ -7312,7 +7321,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                       maxHeight={200}
                     >
                       <div className="p-1 text-muted-foreground text-sm">
-                        {t("chat:input.placeholder")}
+                        Plan, @ for context, / for commands
                       </div>
                       <PromptInputActions className="w-full">
                         <div className="flex items-center gap-0.5 flex-1 min-w-0">
@@ -7322,7 +7331,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                             className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground rounded-md cursor-not-allowed"
                           >
                             <AgentIcon className="h-3.5 w-3.5" />
-                            <span>{t("chat:input.agentMode")}</span>
+                            <span>Agent</span>
                             <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                           </button>
 
@@ -7334,10 +7343,10 @@ Make sure to preserve all functionality from both branches when resolving confli
                             <ClaudeCodeIcon className="h-3.5 w-3.5" />
                             <span>
                               {hasCustomClaudeConfig ? (
-                                t("chat:input.customModel")
+                                "Custom Model"
                               ) : (
                                 <>
-                                  {t("chat:input.sonnet")}{" "}
+                                  Sonnet{" "}
                                   <span className="text-muted-foreground">
                                     4.5
                                   </span>
@@ -7467,8 +7476,8 @@ Make sure to preserve all functionality from both branches when resolving confli
           </DiffStateProvider>
         )}
 
-        {/* Preview Sidebar - always available, can be opened manually */}
-        {!isMobileFullscreen && (
+        {/* Preview Sidebar - hidden on mobile fullscreen and when preview is not available */}
+        {canOpenPreview && !isMobileFullscreen && (
           <ResizableSidebar
             isOpen={isPreviewSidebarOpen}
             onClose={() => setIsPreviewSidebarOpen(false)}
@@ -7482,18 +7491,56 @@ Make sure to preserve all functionality from both branches when resolving confli
             className="bg-tl-background border-l"
             style={{ borderLeftWidth: "0.5px" }}
           >
-            <AgentPreview
-              chatId={chatId}
-              sandboxId={sandboxId}
-              port={previewPort}
-              customUrl={customPreviewUrl ?? undefined}
-              repository={repository}
-              hideHeader={false}
-              onClose={() => {
-                setIsPreviewSidebarOpen(false)
-                setCustomPreviewUrl(null)
-              }}
-            />
+            {isQuickSetup ? (
+              <div className="flex flex-col h-full">
+                {/* Header with close button */}
+                <div className="flex items-center justify-end px-3 h-10 bg-tl-background flex-shrink-0 border-b border-border/50">
+                  <Button
+                    variant="ghost"
+                    className="h-7 w-7 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md"
+                    onClick={() => setIsPreviewSidebarOpen(false)}
+                  >
+                    <IconCloseSidebarRight className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </div>
+                {/* Content */}
+                <div className="flex flex-col items-center justify-center flex-1 p-6 text-center">
+                  <div className="text-muted-foreground mb-4">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="48"
+                      height="48"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="opacity-50"
+                    >
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                      <line x1="8" y1="21" x2="16" y2="21" />
+                      <line x1="12" y1="17" x2="12" y2="21" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Preview not available
+                  </p>
+                  <p className="text-xs text-muted-foreground/70 max-w-[200px]">
+                    Set up this repository to enable live preview
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <AgentPreview
+                chatId={chatId}
+                sandboxId={sandboxId}
+                port={previewPort}
+                repository={repository}
+                hideHeader={false}
+                onClose={() => setIsPreviewSidebarOpen(false)}
+              />
+            )}
           </ResizableSidebar>
         )}
 

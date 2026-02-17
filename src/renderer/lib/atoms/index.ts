@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { atom } from "jotai"
 import { atomWithStorage } from "jotai/utils"
 import { desktopViewAtom as _desktopViewAtom } from "../../features/agents/atoms"

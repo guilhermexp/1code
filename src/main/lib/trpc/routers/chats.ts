@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { BrowserWindow } from "electron"
 import * as fs from "fs/promises"

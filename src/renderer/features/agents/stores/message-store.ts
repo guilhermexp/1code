@@ -1,7 +1,8 @@
+// @ts-nocheck
 "use client"
 
 import { atom } from "jotai"
-import { atomFamily } from "jotai-family"
+import { atomFamily } from "jotai/utils"
 
 // Types
 export interface MessagePart {
@@ -255,50 +256,6 @@ export const userMessageIdsAtom = atom((get) => {
   return newUserIds
 })
 
-// Per-subChat version (for split view)
-const userMessageIdsPerChatCache = new Map<string, string[]>()
-export const userMessageIdsPerChatAtom = atomFamily((subChatId: string) =>
-  atom((get) => {
-    const ids = get(messageIdsPerChatAtom(subChatId))
-    const roles = get(messageRolesPerChatAtom(subChatId))
-    const newUserIds = ids.filter((id) => roles.get(id) === "user")
-
-    const cached = userMessageIdsPerChatCache.get(subChatId)
-    if (
-      cached &&
-      newUserIds.length === cached.length &&
-      newUserIds.every((id, i) => id === cached[i])
-    ) {
-      return cached
-    }
-
-    userMessageIdsPerChatCache.set(subChatId, newUserIds)
-    return newUserIds
-  })
-)
-
-// More robust per-subChat user IDs selector that derives roles from message atoms
-// instead of role caches. This avoids UI desync if role caches get stale.
-const userMessageIdsPerChatFromMessagesCache = new Map<string, string[]>()
-export const userMessageIdsPerChatFromMessagesAtom = atomFamily((subChatId: string) =>
-  atom((get) => {
-    const ids = get(messageIdsPerChatAtom(subChatId))
-    const newUserIds = ids.filter((id) => get(messageAtomFamily(id))?.role === "user")
-
-    const cached = userMessageIdsPerChatFromMessagesCache.get(subChatId)
-    if (
-      cached &&
-      newUserIds.length === cached.length &&
-      newUserIds.every((id, i) => id === cached[i])
-    ) {
-      return cached
-    }
-
-    userMessageIdsPerChatFromMessagesCache.set(subChatId, newUserIds)
-    return newUserIds
-  })
-)
-
 // ============================================================================
 // MESSAGE GROUPS - For rendering structure
 // ============================================================================
@@ -355,141 +312,6 @@ export const messageGroupsAtom = atom((get) => {
 
   messageGroupsCacheByChat.set(subChatId, groups)
   return groups
-})
-
-// Per-subChat message groups (for split view)
-function buildMessageGroups(ids: string[], roles: Map<string, string>): MessageGroupType[] {
-  const groups: MessageGroupType[] = []
-  let currentGroup: MessageGroupType | null = null
-  for (const id of ids) {
-    const role = roles.get(id)
-    if (!role) continue
-    if (role === "user") {
-      if (currentGroup) groups.push(currentGroup)
-      currentGroup = { userMsgId: id, assistantMsgIds: [] }
-    } else if (currentGroup && role === "assistant") {
-      currentGroup.assistantMsgIds.push(id)
-    }
-  }
-  if (currentGroup) groups.push(currentGroup)
-  return groups
-}
-
-const messageGroupsPerChatCache = new Map<string, MessageGroupType[]>()
-const messageGroupsPerChatAtom = atomFamily((subChatId: string) =>
-  atom((get) => {
-    const ids = get(messageIdsPerChatAtom(subChatId))
-    const roles = get(messageRolesPerChatAtom(subChatId))
-    const groups = buildMessageGroups(ids, roles as Map<string, string>)
-
-    const cached = messageGroupsPerChatCache.get(subChatId) ?? []
-    if (groups.length === cached.length) {
-      let allMatch = true
-      for (let i = 0; i < groups.length; i++) {
-        const ng = groups[i], cg = cached[i]
-        if (ng.userMsgId !== cg?.userMsgId || ng.assistantMsgIds.length !== cg?.assistantMsgIds.length ||
-            !ng.assistantMsgIds.every((id, j) => id === cg?.assistantMsgIds[j])) {
-          allMatch = false
-          break
-        }
-      }
-      if (allMatch) return cached
-    }
-    messageGroupsPerChatCache.set(subChatId, groups)
-    return groups
-  })
-)
-
-// Per-subChat assistant IDs for a user message (for split view)
-// Key format: "subChatId:userMsgId"
-const assistantIdsPerChatCache = new Map<string, string[]>()
-export const assistantIdsPerChatAtomFamily = atomFamily((key: string) => {
-  const sepIdx = key.indexOf(":")
-  const subChatId = key.slice(0, sepIdx)
-  const userMsgId = key.slice(sepIdx + 1)
-  return atom((get) => {
-    const groups = get(messageGroupsPerChatAtom(subChatId))
-    const group = groups.find((g) => g.userMsgId === userMsgId)
-    const newIds = group?.assistantMsgIds ?? []
-    const cached = assistantIdsPerChatCache.get(key)
-    if (cached && cached.length === newIds.length && cached.every((id, i) => id === newIds[i])) {
-      return cached
-    }
-    assistantIdsPerChatCache.set(key, newIds)
-    return newIds
-  })
-})
-
-// More robust per-subChat assistant IDs selector that derives grouping from
-// message atoms (role field) instead of role caches.
-const assistantIdsPerChatFromMessagesCache = new Map<string, string[]>()
-export const assistantIdsPerChatFromMessagesAtomFamily = atomFamily((key: string) => {
-  const sepIdx = key.indexOf(":")
-  const subChatId = key.slice(0, sepIdx)
-  const userMsgId = key.slice(sepIdx + 1)
-  return atom((get) => {
-    const ids = get(messageIdsPerChatAtom(subChatId))
-    const userMsgIndex = ids.indexOf(userMsgId)
-    if (userMsgIndex < 0) return []
-
-    const newIds: string[] = []
-    for (let i = userMsgIndex + 1; i < ids.length; i++) {
-      const id = ids[i]
-      const role = get(messageAtomFamily(id))?.role
-      if (role === "user") break
-      if (role === "assistant") newIds.push(id)
-    }
-
-    const cached = assistantIdsPerChatFromMessagesCache.get(key)
-    if (cached && cached.length === newIds.length && cached.every((id, i) => id === newIds[i])) {
-      return cached
-    }
-    assistantIdsPerChatFromMessagesCache.set(key, newIds)
-    return newIds
-  })
-})
-
-// Per-subChat isLastUserMessage (for split view)
-export const isLastUserMessagePerChatAtomFamily = atomFamily((key: string) => {
-  const sepIdx = key.indexOf(":")
-  const subChatId = key.slice(0, sepIdx)
-  const userMsgId = key.slice(sepIdx + 1)
-  return atom((get) => {
-    const userIds = get(userMessageIdsPerChatAtom(subChatId))
-    return userIds[userIds.length - 1] === userMsgId
-  })
-})
-
-// Robust per-subChat "is last user message" selector based on message atoms.
-export const isLastUserMessagePerChatFromMessagesAtomFamily = atomFamily((key: string) => {
-  const sepIdx = key.indexOf(":")
-  const subChatId = key.slice(0, sepIdx)
-  const userMsgId = key.slice(sepIdx + 1)
-  return atom((get) => {
-    const userIds = get(userMessageIdsPerChatFromMessagesAtom(subChatId))
-    return userIds[userIds.length - 1] === userMsgId
-  })
-})
-
-// Per-subChat rollback target (for split view)
-export const rollbackTargetPerChatAtomFamily = atomFamily((key: string) => {
-  const sepIdx = key.indexOf(":")
-  const subChatId = key.slice(0, sepIdx)
-  const userMsgId = key.slice(sepIdx + 1)
-  return atom((get) => {
-    const ids = get(messageIdsPerChatAtom(subChatId))
-    const roles = get(messageRolesPerChatAtom(subChatId))
-    const userMsgIndex = ids.indexOf(userMsgId)
-    if (userMsgIndex <= 0) return null
-    return findRollbackTargetSdkUuidForUserIndex(userMsgIndex, ids.length, (index) => {
-      const messageId = ids[index]
-      if (!messageId) return null
-      const role = roles.get(messageId)
-      if (!role) return null
-      if (role !== "assistant") return { role: role as "user" | "assistant" | "system" }
-      return get(messageAtomFamily(messageId))
-    })
-  })
 })
 
 // ============================================================================

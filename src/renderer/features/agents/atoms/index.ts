@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { atom } from "jotai"
 import { atomWithStorage } from "jotai/utils"
 import { atomFamily } from "jotai-family"

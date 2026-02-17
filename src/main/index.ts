@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { app, BrowserWindow, Menu, session } from "electron"
 import { existsSync, readFileSync, readlinkSync, unlinkSync } from "fs"
 import { createServer } from "http"

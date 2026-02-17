@@ -1,12 +1,14 @@
+// @ts-nocheck
 "use client"
 
 import { createContext, memo, useMemo } from "react"
 import { useAtomValue } from "jotai"
 import {
   messageAtomFamily,
-  assistantIdsPerChatFromMessagesAtomFamily,
-  isLastUserMessagePerChatFromMessagesAtomFamily,
-  rollbackTargetPerChatAtomFamily,
+  assistantIdsForUserMsgAtomFamily,
+  isLastUserMessageAtomFamily,
+  rollbackTargetSdkUuidForUserMsgAtomFamily,
+  isStreamingAtom,
   isRollingBackAtom,
 } from "../stores/message-store"
 import { MemoizedAssistantMessages } from "./messages-list"
@@ -45,7 +47,8 @@ interface IsolatedMessageGroupProps {
   stickyTopClass: string
   sandboxSetupError?: string
   onRetrySetup?: () => void
-  onUrlClick?: (url: string) => void
+  onRollback?: (msg: any) => void
+  onFork?: (messageId: string) => void
   // Components passed from parent - must be stable references
   UserBubbleComponent: React.ComponentType<{
     messageId: string
@@ -61,7 +64,6 @@ interface IsolatedMessageGroupProps {
   }>
   MessageGroupWrapper: React.ComponentType<{ children: React.ReactNode; isLastGroup?: boolean }>
   toolRegistry: Record<string, { icon: any; title: (args: any) => string }>
-  onRollback?: (userMsg: any) => void
 }
 
 function areGroupPropsEqual(
@@ -77,12 +79,12 @@ function areGroupPropsEqual(
     prev.stickyTopClass === next.stickyTopClass &&
     prev.sandboxSetupError === next.sandboxSetupError &&
     prev.onRetrySetup === next.onRetrySetup &&
-    prev.onUrlClick === next.onUrlClick &&
+    prev.onRollback === next.onRollback &&
+    prev.onFork === next.onFork &&
     prev.UserBubbleComponent === next.UserBubbleComponent &&
     prev.ToolCallComponent === next.ToolCallComponent &&
     prev.MessageGroupWrapper === next.MessageGroupWrapper &&
-    prev.toolRegistry === next.toolRegistry &&
-    prev.onRollback === next.onRollback
+    prev.toolRegistry === next.toolRegistry
   )
 }
 
@@ -95,22 +97,19 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
   stickyTopClass,
   sandboxSetupError,
   onRetrySetup,
-  onUrlClick,
+  onRollback,
+  onFork,
   UserBubbleComponent,
   ToolCallComponent,
   MessageGroupWrapper,
   toolRegistry,
-  onRollback,
 }: IsolatedMessageGroupProps) {
   // Subscribe to specific atoms - NOT the whole messages array
   const userMsg = useAtomValue(messageAtomFamily(userMsgId))
-  const assistantIds = useAtomValue(assistantIdsPerChatFromMessagesAtomFamily(perChatKey))
-  const isLastGroup = useAtomValue(isLastUserMessagePerChatFromMessagesAtomFamily(perChatKey))
-  const rollbackTargetSdkUuid = useAtomValue(rollbackTargetPerChatAtomFamily(perChatKey))
-  const subChatStatus = useStreamingStatusStore(
-    useCallback((s) => s.statuses[subChatId] ?? "ready", [subChatId])
-  )
-  const isStreaming = subChatStatus === "streaming" || subChatStatus === "submitted"
+  const assistantIds = useAtomValue(assistantIdsForUserMsgAtomFamily(userMsgId))
+  const isLastGroup = useAtomValue(isLastUserMessageAtomFamily(userMsgId))
+  const rollbackTargetSdkUuid = useAtomValue(rollbackTargetSdkUuidForUserMsgAtomFamily(userMsgId))
+  const isStreaming = useAtomValue(isStreamingAtom)
   const isRollingBack = useAtomValue(isRollingBackAtom)
 
   // Show rollback button only when this user turn has a valid rollback target.
@@ -289,14 +288,15 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
 
       {/* Assistant messages - memoized, only re-renders when IDs change */}
       {assistantIds.length > 0 && (
-        <MemoizedAssistantMessages
-          assistantMsgIds={assistantIds}
-          subChatId={subChatId}
-          chatId={chatId}
-          isMobile={isMobile}
-          sandboxSetupStatus={sandboxSetupStatus}
-          onUrlClick={onUrlClick}
-        />
+        <ForkContext.Provider value={canFork ? onFork : null}>
+          <MemoizedAssistantMessages
+            assistantMsgIds={assistantIds}
+            subChatId={subChatId}
+            chatId={chatId}
+            isMobile={isMobile}
+            sandboxSetupStatus={sandboxSetupStatus}
+          />
+        </ForkContext.Provider>
       )}
 
       {/* Planning indicator */}

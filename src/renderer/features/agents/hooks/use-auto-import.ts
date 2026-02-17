@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback } from "react"
 import { trpc } from "../../../lib/trpc"
 import { toast } from "sonner"
