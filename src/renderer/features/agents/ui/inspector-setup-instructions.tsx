@@ -8,27 +8,19 @@ interface InspectorSetupInstructionsProps {
   className?: string
 }
 
-const INTEGRATION_CODE = `// Add this plugin to your React Grab setup
-// This sends component info to 1code when you copy a component
+const INTEGRATION_CODE = `// Optional: Install Agentation directly in your project
+// npm install agentation -D
 
-if (window.ReactGrab) {
-  const api = window.ReactGrab.init();
+import { Agentation } from 'agentation'
 
-  // Plugin that sends data to 1code
-  api.registerPlugin({
-    name: '1code-integration',
-    hooks: {
-      onCopySuccess: (elements, content) => {
-        // Send to parent window (1code)
-        window.parent.postMessage({
-          type: 'REACT_GRAB_COMPONENT',
-          data: { content, elements }
-        }, '*');
-      }
-    }
-  });
-
-  api.activate();
+// Add <Agentation /> to your app's root component
+function App() {
+  return (
+    <>
+      <YourApp />
+      <Agentation />
+    </>
+  )
 }`
 
 export function InspectorSetupInstructions({ className }: InspectorSetupInstructionsProps) {
@@ -49,7 +41,7 @@ export function InspectorSetupInstructions({ className }: InspectorSetupInstruct
       >
         <div className="flex items-center gap-2">
           <Info className="h-4 w-4" />
-          <span>How to connect React Grab to 1code</span>
+          <span>Install Agentation in your project (optional)</span>
         </div>
         <span className="text-xs text-muted-foreground">
           {isExpanded ? "Hide" : "Show"}
@@ -59,9 +51,9 @@ export function InspectorSetupInstructions({ className }: InspectorSetupInstruct
       {isExpanded && (
         <div className="space-y-3 p-4 bg-muted/50 rounded-lg border">
           <div>
-            <h4 className="text-sm font-medium mb-2">You already have React Grab installed ✓</h4>
+            <h4 className="text-sm font-medium mb-2">Inspector works automatically</h4>
             <p className="text-sm text-muted-foreground mb-3">
-              Just add this plugin to send component info to 1code:
+              For richer integration, install Agentation directly in your project:
             </p>
           </div>
 
@@ -81,8 +73,8 @@ export function InspectorSetupInstructions({ className }: InspectorSetupInstruct
           </div>
 
           <div className="text-xs text-muted-foreground space-y-1">
-            <p><strong>Where to add:</strong> In the same file where you initialize React Grab</p>
-            <p><strong>How to use:</strong> Hover over a component and press ⌘C - it will be added to your chat context!</p>
+            <p><strong>How to use:</strong> Click on elements in the preview, add comments, and copy to chat context.</p>
+            <p><strong>Learn more:</strong> <a href="https://agentation.dev" target="_blank" rel="noopener noreferrer" className="underline">agentation.dev</a></p>
           </div>
         </div>
       )}

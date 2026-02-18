@@ -14,37 +14,19 @@ interface InspectorSetupDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-const SETUP_CODE = `// Add this to your app's entry point (e.g., main.tsx or App.tsx)
-// This enables component inspection with 1code
+const SETUP_CODE = `// Optional: Install Agentation directly in your project for richer integration
+// npm install agentation -D
 
-if (typeof window !== 'undefined') {
-  // Load React Grab dynamically
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/react-grab@latest/dist/index.global.js';
-  script.async = true;
+import { Agentation } from 'agentation'
 
-  script.onload = () => {
-    if (window.ReactGrab) {
-      const api = window.ReactGrab.init();
-
-      // Send component info to parent window (1code)
-      api.registerPlugin({
-        name: '1code-integration',
-        hooks: {
-          onCopySuccess: (elements, content) => {
-            window.parent.postMessage({
-              type: 'REACT_GRAB_COMPONENT',
-              data: { content, elements }
-            }, '*');
-          }
-        }
-      });
-
-      api.activate();
-    }
-  };
-
-  document.head.appendChild(script);
+// Add <Agentation /> to your app's root component
+function App() {
+  return (
+    <>
+      <YourApp />
+      <Agentation />
+    </>
+  )
 }`
 
 export function InspectorSetupDialog({ open, onOpenChange }: InspectorSetupDialogProps) {
@@ -57,18 +39,18 @@ export function InspectorSetupDialog({ open, onOpenChange }: InspectorSetupDialo
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Setup Inspector Mode</DialogTitle>
+          <DialogTitle>Setup Agentation (Optional)</DialogTitle>
           <DialogDescription>
-            Due to browser security (CORS), we cannot automatically inject the inspector into your app.
-            Add this code to your project to enable component inspection.
+            Inspector mode already works via auto-injection. For the best experience,
+            you can install Agentation directly in your project.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <h4 className="text-sm font-medium mb-2">Step 1: Add the code below</h4>
+            <h4 className="text-sm font-medium mb-2">Install in your project</h4>
             <p className="text-sm text-muted-foreground mb-3">
-              Copy and paste this into your app's entry point (e.g., <code className="bg-muted px-1 py-0.5 rounded">main.tsx</code> or <code className="bg-muted px-1 py-0.5 rounded">App.tsx</code>)
+              Copy and paste this into your app's entry point (e.g., <code className="bg-muted px-1 py-0.5 rounded">App.tsx</code>)
             </p>
             <div className="relative">
               <pre className="bg-muted p-4 rounded-lg text-xs overflow-x-auto">
@@ -87,29 +69,29 @@ export function InspectorSetupDialog({ open, onOpenChange }: InspectorSetupDialo
           </div>
 
           <div>
-            <h4 className="text-sm font-medium mb-2">Step 2: Use the Inspector</h4>
+            <h4 className="text-sm font-medium mb-2">How to use</h4>
             <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-              <li>Reload your app after adding the code</li>
-              <li>Hover over any React component in the preview</li>
-              <li>Press <kbd className="bg-muted px-2 py-0.5 rounded text-xs">⌘C</kbd> while hovering</li>
-              <li>The component info will be added to your chat context</li>
+              <li>Click the inspector button in the preview toolbar</li>
+              <li>Click on any element in the preview to annotate it</li>
+              <li>Add a comment describing what you want changed</li>
+              <li>Copy the annotation - it will be added to your chat context</li>
             </ul>
           </div>
 
           <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg">
             <p className="text-xs text-blue-900 dark:text-blue-100">
-              <strong>Note:</strong> This code only runs in development mode and doesn't affect your production build.
-              You can remove it anytime without issues.
+              <strong>Note:</strong> Inspector mode works automatically without any setup.
+              Installing Agentation directly enables richer integration with your project's component tree.
             </p>
           </div>
 
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Learn more about React Grab:</span>
+            <span>Learn more about Agentation:</span>
             <Button
               variant="link"
               size="sm"
               className="p-0 h-auto"
-              onClick={() => window.open("https://github.com/aidenybai/react-grab", "_blank")}
+              onClick={() => window.open("https://agentation.dev", "_blank")}
             >
               <ExternalLink className="h-3 w-3 mr-1" />
               Documentation

@@ -191,7 +191,7 @@ export function AgentPreview({
     AGENTS_PREVIEW_CONSTANTS.MAX_WIDTH,
   )
 
-  // Inspector Mode state for React Grab integration
+  // Inspector Mode state
   const [inspectorEnabled, setInspectorEnabled] = useState(false)
   const lastInspectorClipboardRef = useRef<string>("")
   const [previewLogs, setPreviewLogs] = useState<PreviewLogEntry[]>([])
@@ -566,18 +566,6 @@ export function AgentPreview({
       if (webviewDomReady) {
         updateWebviewNavState()
       }
-      if (!inspectorEnabled && webviewDomReady) {
-        executeInWebview(
-          `(() => {
-            try {
-              window.__1codeInspectorEnabled = false;
-              const api = window.reactGrabApi || window.__REACT_GRAB__;
-              if (api && typeof api.deactivate === "function") api.deactivate();
-            } catch {}
-          })();`,
-          true,
-        ).catch(() => {})
-      }
     }
     const handleConsoleMessage = (event: Event) => {
       const payload = event as {
@@ -594,7 +582,7 @@ export function AgentPreview({
           const content = decodeURIComponent(encoded)
           lastInspectorClipboardRef.current = content
           dispatchInspectorSelection(chatId, content)
-          toast.success("Component added to context")
+          toast.success("Annotation added to context")
         } catch (error) {
           pushPreviewLog("error", "inspector", "decode-failed", error)
         }
@@ -637,8 +625,6 @@ export function AgentPreview({
     webviewEl,
     webviewDomReady,
     cacheBuster,
-    inspectorEnabled,
-    executeInWebview,
     pushPreviewLog,
     updateWebviewNavState,
   ])
@@ -693,122 +679,12 @@ export function AgentPreview({
     setTimeout(() => setIsRefreshing(false), 400)
   }, [webviewEl, webviewDomReady, isRefreshing, pushPreviewLog])
 
-  const syncInspectorQuickState = useCallback(
-    (enabled: boolean) => {
-      if (!webviewEl || !webviewDomReady) return
-      executeInWebview(
-          `(() => {
-            try {
-              const FORCE_OFF_STYLE_ID = "__1CODE_INSPECTOR_FORCE_OFF__";
-              const removeReactGrabDomArtifacts = () => {
-                try {
-                  const toRemove = [];
-                  const scan = (root) => {
-                    const nodes = root.querySelectorAll("*");
-                    for (const node of nodes) {
-                      if (!(node instanceof HTMLElement)) continue;
-                      const attrs = node.getAttributeNames();
-                      const hasReactGrabAttr = attrs.some((attr) => attr.startsWith("data-react-grab-"));
-                      const className = typeof node.className === "string" ? node.className : "";
-                      const hasReactGrabClass = className.toLowerCase().includes("react-grab");
-                      if (hasReactGrabAttr || hasReactGrabClass) {
-                        toRemove.push(node);
-                      }
-                      const shadow = node.shadowRoot;
-                      if (shadow) scan(shadow);
-                    }
-                  };
-                  scan(document);
-                  for (const node of toRemove) {
-                    try { node.remove(); } catch {}
-                  }
-                } catch {}
-              };
-              const applyForceOffStyle = (on) => {
-                const existing = document.getElementById(FORCE_OFF_STYLE_ID);
-                if (!on) {
-                  if (existing) existing.remove();
-                  return;
-                }
-                const css = [
-                  ".react-grab-toolbar, [class*='react-grab-toolbar'] { display: none !important; pointer-events: none !important; }",
-                  "[data-react-grab-toolbar], [data-react-grab-toolbar-toggle], [data-react-grab-toolbar-collapse], [data-react-grab-toolbar-enabled], [data-react-grab-overlay], [data-react-grab-overlay-canvas], [data-react-grab-context-menu], [data-react-grab-selection-label], [data-react-grab-cursor] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; }",
-                ].join("\\n");
-                if (existing) {
-                  existing.textContent = css;
-                  return;
-                }
-                const style = document.createElement("style");
-                style.id = FORCE_OFF_STYLE_ID;
-                style.textContent = css;
-                (document.head || document.documentElement).appendChild(style);
-              };
-
-              window.__1codeInspectorEnabled = ${enabled ? "true" : "false"};
-              const api = window.reactGrabApi || window.__REACT_GRAB__;
-              if (api) {
-                if (typeof api.setEnabled === "function") {
-                  try { api.setEnabled(${enabled ? "true" : "false"}); } catch {}
-                }
-                if (typeof api.setToolbarState === "function") {
-                  try {
-                    api.setToolbarState({
-                      enabled: ${enabled ? "true" : "false"},
-                      collapsed: ${enabled ? "false" : "true"},
-                    });
-                  } catch {}
-                }
-                if (typeof api.setOptions === "function") {
-                  try {
-                    api.setOptions({
-                      theme: {
-                        // Keep inspector visuals subtle in preview.
-                        selectionBox: { enabled: false },
-                        dragBox: { enabled: false },
-                        grabbedBoxes: { enabled: false },
-                        elementLabel: { enabled: ${enabled ? "true" : "false"} },
-                        toolbar: {
-                          enabled: ${enabled ? "true" : "false"},
-                        },
-                      },
-                    });
-                  } catch {}
-                }
-                const methods = ${enabled
-                  ? '["activate","enable","start","open"]'
-                  : '["deactivate","disable","stop","close"]'};
-                for (const method of methods) {
-                  if (typeof api[method] === "function") {
-                    try { api[method](); } catch {}
-                  }
-                }
-              }
-              if (!${enabled ? "true" : "false"}) {
-                removeReactGrabDomArtifacts();
-              }
-              applyForceOffStyle(${enabled ? "false" : "true"});
-              return true;
-            } catch {
-              return false;
-            }
-          })();`,
-          true,
-        )
-        .catch(() => {})
-    },
-    [executeInWebview, webviewDomReady, webviewEl],
-  )
-
   const handleInspectorToggle = useCallback(() => {
     setInspectorEnabled((prev) => {
-      const next = !prev
-      syncInspectorQuickState(next)
-      if (!next) {
-        toast.message("Inspector disabled")
-      }
-      return next
+      if (prev) toast.message("Inspector disabled")
+      return !prev
     })
-  }, [syncInspectorQuickState])
+  }, [])
 
   const handleOpenPreviewDevTools = useCallback(() => {
     if (!webviewEl || !webviewDomReady) {
@@ -919,370 +795,60 @@ export function AgentPreview({
     [device, maxWidth, setDevice],
   )
 
-  // Inspector Mode: React Grab injection in Chromium webview
+  // Inspector Mode: Agentation bundle injection in Chromium webview
+  const agentationBundleRef = useRef<string | null>(null)
+
   useEffect(() => {
     if (!webviewEl || !webviewDomReady) return
 
-    const script = `
-      (async () => {
-        try {
-          const enabled = ${inspectorEnabled ? "true" : "false"};
-          window.__1codeInspectorEnabled = enabled;
-          const PREFIX = "__1CODE_INSPECTOR_SELECTED__::";
-          const FORCE_OFF_STYLE_ID = "__1CODE_INSPECTOR_FORCE_OFF__";
-          const LAYOUT_LOCK_STYLE_ID = "__1CODE_INSPECTOR_LAYOUT_LOCK__";
-          const removeReactGrabDomArtifacts = () => {
-            try {
-              const toRemove = [];
-              const scan = (root) => {
-                const nodes = root.querySelectorAll("*");
-                for (const node of nodes) {
-                  if (!(node instanceof HTMLElement)) continue;
-                  const attrs = node.getAttributeNames();
-                  const hasReactGrabAttr = attrs.some((attr) => attr.startsWith("data-react-grab-"));
-                  const className = typeof node.className === "string" ? node.className : "";
-                  const hasReactGrabClass = className.toLowerCase().includes("react-grab");
-                  if (hasReactGrabAttr || hasReactGrabClass) {
-                    toRemove.push(node);
-                  }
-                  const shadow = node.shadowRoot;
-                  if (shadow) scan(shadow);
-                }
-              };
-              scan(document);
-              for (const node of toRemove) {
-                try { node.remove(); } catch {}
-              }
-            } catch {}
-          };
-
-          const applyForceOffStyle = (on) => {
-            const existing = document.getElementById(FORCE_OFF_STYLE_ID);
-            if (!on) {
-              if (existing) existing.remove();
-              return;
-            }
-            const css = [
-              ".react-grab-toolbar, [class*='react-grab-toolbar'] { display: none !important; pointer-events: none !important; }",
-              "[data-react-grab-toolbar], [data-react-grab-toolbar-toggle], [data-react-grab-toolbar-collapse], [data-react-grab-toolbar-enabled], [data-react-grab-overlay], [data-react-grab-overlay-canvas], [data-react-grab-context-menu], [data-react-grab-selection-label], [data-react-grab-cursor] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; }",
-            ].join("\\n");
-            if (existing) {
-              existing.textContent = css;
-              return;
-            }
-            const style = document.createElement("style");
-            style.id = FORCE_OFF_STYLE_ID;
-            style.textContent = css;
-            (document.head || document.documentElement).appendChild(style);
-          };
-
-          const applyLayoutLock = (on) => {
-            const existing = document.getElementById(LAYOUT_LOCK_STYLE_ID);
-            if (!on) {
-              if (existing) existing.remove();
-              return;
-            }
-
-            const viewportWidth = Math.max(
-              window.innerWidth || 0,
-              document.documentElement?.clientWidth || 0
-            );
-            if (!viewportWidth) return;
-
-            const css = [
-              "html, body { min-width: " + viewportWidth + "px !important; }",
-              "body { overflow-x: hidden !important; }",
-            ].join("\\n");
-
-            if (existing) {
-              existing.textContent = css;
-              return;
-            }
-
-            const style = document.createElement("style");
-            style.id = LAYOUT_LOCK_STYLE_ID;
-            style.textContent = css;
-            (document.head || document.documentElement).appendChild(style);
-          };
-
-          const emitSelection = (content) => {
-            try {
-              console.warn(PREFIX + encodeURIComponent(String(content || "")));
-            } catch (err) {
-              console.error("[1code Inspector] emit selection failed", err);
-            }
-          };
-
-          const hasAnyMethod = (obj, methods) => {
-            if (!obj) return false;
-            return methods.some((method) => typeof obj[method] === "function");
-          };
-
-            const setup = (api) => {
-            if (!api) return { ready: false, active: false };
-            window.reactGrabApi = api;
-
-            const setApiEnabled = (targetApi, on) => {
-              if (!targetApi || typeof targetApi.setEnabled !== "function") return;
-              try { targetApi.setEnabled(Boolean(on)); } catch {}
-            };
-
-            const setToolbarEnabled = (targetApi, on) => {
-              if (!targetApi || typeof targetApi.setOptions !== "function") return;
-              try {
-                targetApi.setOptions({
-                  theme: {
-                    // Keep inspector visuals subtle in preview.
-                    selectionBox: { enabled: false },
-                    dragBox: { enabled: false },
-                    grabbedBoxes: { enabled: false },
-                    elementLabel: { enabled: Boolean(on) },
-                    toolbar: {
-                      enabled: Boolean(on),
-                    },
-                  },
-                });
-              } catch {}
-            };
-
-            const setToolbarState = (targetApi, on) => {
-              if (!targetApi || typeof targetApi.setToolbarState !== "function") return;
-              try {
-                targetApi.setToolbarState({
-                  enabled: Boolean(on),
-                  collapsed: !on,
-                });
-              } catch {}
-            };
-
-            const applyApiEnabledState = (targetApi, on) => {
-              if (!targetApi) return;
-              const enableMethods = ["activate", "enable", "start", "open"];
-              const disableMethods = ["deactivate", "disable", "stop", "close"];
-              const methods = on ? enableMethods : disableMethods;
-              let invoked = false;
-              setApiEnabled(targetApi, on);
-              setToolbarEnabled(targetApi, on);
-              setToolbarState(targetApi, on);
-              for (const method of methods) {
-                if (typeof targetApi[method] === "function") {
-                  try {
-                    targetApi[method]();
-                    invoked = true;
-                  } catch {}
-                }
-              }
-              return invoked;
-            };
-
-            if (!window.__1codeInspectorPluginRegistered && typeof api.registerPlugin === "function") {
-              api.registerPlugin({
-                name: "1code-webview",
-                hooks: {
-                  onCopySuccess: (...args) => {
-                    let content = "";
-                    for (const arg of args) {
-                      if (typeof arg === "string") { content = arg; break; }
-                    }
-                    if (!content) {
-                      for (const arg of args) {
-                        if (arg && typeof arg === "object") {
-                          if (typeof arg.content === "string") { content = arg.content; break; }
-                          if (typeof arg.text === "string") { content = arg.text; break; }
-                        }
-                      }
-                    }
-                    if (content) emitSelection(content);
-                  }
-                }
-              });
-              window.__1codeInspectorPluginRegistered = true;
-            }
-
-            const isEnabled = Boolean(window.__1codeInspectorEnabled);
-            const invoked = applyApiEnabledState(api, isEnabled);
-            return {
-              ready: true,
-              active: isEnabled ? invoked : true,
-            };
-          };
-
-          const getCurrentApi = () => {
-            const candidates = [window.reactGrabApi, window.__REACT_GRAB__];
-            for (const candidate of candidates) {
-              if (
-                hasAnyMethod(candidate, ["activate", "enable", "start", "open", "deactivate", "disable", "stop", "close"]) ||
-                typeof candidate?.registerPlugin === "function"
-              ) {
-                return candidate;
-              }
-            }
-            return null;
-          };
-
-          const forceDeactivate = () => {
-            const api = getCurrentApi();
-            if (api) {
-              if (typeof api.setEnabled === "function") {
-                try { api.setEnabled(false); } catch {}
-              }
-              if (typeof api.setOptions === "function") {
-                try {
-                  api.setOptions({
-                    theme: {
-                      selectionBox: { enabled: false },
-                      dragBox: { enabled: false },
-                      grabbedBoxes: { enabled: false },
-                      elementLabel: { enabled: false },
-                      toolbar: {
-                        enabled: false,
-                      },
-                    },
-                  });
-                } catch {}
-              }
-              if (typeof api.setToolbarState === "function") {
-                try {
-                  api.setToolbarState({
-                    enabled: false,
-                    collapsed: true,
-                  });
-                } catch {}
-              }
-              const methods = ["deactivate", "disable", "stop", "close"];
-              for (const method of methods) {
-                if (typeof api[method] === "function") {
-                  try { api[method](); } catch {}
-                }
-              }
-            }
-            removeReactGrabDomArtifacts();
-            applyForceOffStyle(true);
-            applyLayoutLock(false);
-          };
-
-          // Disabled mode is strict opt-out: do not load/init React Grab automatically.
-          if (!enabled) {
-            forceDeactivate();
-            return { ok: true, active: false, reason: "disabled" };
-          }
-
-          // Enabled: remove hard-off style and continue with init/load path.
-          applyForceOffStyle(false);
-          applyLayoutLock(true);
-
-          const initIfAvailable = () => {
-            const existingApi = getCurrentApi();
-            if (existingApi) return setup(existingApi);
-            if (window.ReactGrab && typeof window.ReactGrab.init === "function") {
-              const api = window.ReactGrab.init({
-                onElementSelect: (element) => {
-                  try {
-                    if (window.reactGrabApi && typeof window.reactGrabApi.copyElement === "function") {
-                      window.reactGrabApi.copyElement(element);
-                    }
-                  } catch {}
-                }
-              });
-              return setup(api);
-            }
-            return { ready: false, active: false };
-          };
-
-          const immediate = initIfAvailable();
-          if (immediate.ready) {
-            return { ok: immediate.active, active: immediate.active, reason: immediate.active ? "ready" : "methods-missing" };
-          }
-
-          const head = document.head || document.getElementsByTagName("head")[0] || document.documentElement;
-          if (!head) return { ok: false, active: false, reason: "no-head" };
-
-          if (!document.querySelector('link[href*="react-grab"]')) {
-            const css = document.createElement("link");
-            css.rel = "stylesheet";
-            css.href = "https://cdn.jsdelivr.net/npm/react-grab@latest/dist/styles.css";
-            head.appendChild(css);
-          }
-
-          const SCRIPT_URLS = [
-            "https://cdn.jsdelivr.net/npm/react-grab@latest/dist/index.global.js",
-            "https://unpkg.com/react-grab@latest/dist/index.global.js",
-          ];
-
-          const removeExistingReactGrabScripts = () => {
-            const existing = Array.from(document.querySelectorAll("script[src*='react-grab']"));
-            for (const node of existing) {
-              try { node.remove(); } catch {}
-            }
-          };
-
-          const loadScript = async () => {
-            // If API already exists, don't inject again.
-            if (window.ReactGrab || window.__REACT_GRAB__ || window.reactGrabApi) {
-              return true;
-            }
-
-            removeExistingReactGrabScripts();
-
-            for (const src of SCRIPT_URLS) {
-              const loaded = await new Promise((resolve) => {
-                const scriptTag = document.createElement("script");
-                scriptTag.src = src;
-                scriptTag.async = true;
-                scriptTag.onload = () => resolve(true);
-                scriptTag.onerror = () => resolve(false);
-                head.appendChild(scriptTag);
-              });
-
-              if (loaded && (window.ReactGrab || window.__REACT_GRAB__)) {
-                return true;
-              }
-            }
-
-            return false;
-          };
-
-          const loaded = await loadScript();
-          if (!loaded) return { ok: false, active: false, reason: "script-load-failed" };
-
-          for (let i = 0; i < 8; i++) {
-            const result = initIfAvailable();
-            if (result.ready) {
-              return { ok: result.active, active: result.active, reason: result.active ? "activated" : "methods-missing" };
-            }
-            await new Promise((resolve) => setTimeout(resolve, 80));
-          }
-
-          return { ok: false, active: false, reason: "api-not-ready" };
-        } catch (err) {
-          console.error("[1code Inspector] webview injection failed", err);
-          return { ok: false, active: false, reason: "exception" };
+    const run = async () => {
+      if (inspectorEnabled) {
+        // Lazy load bundle string
+        if (!agentationBundleRef.current) {
+          const { default: bundle } = await import("@/assets/agentation-bundle.min.js?raw")
+          agentationBundleRef.current = bundle
         }
-      })();
-    `
 
-    executeInWebview(script, true)
-      .then((result) => {
-        const active = Boolean(result && typeof result === "object" ? (result as any).active : result)
-        const reason =
-          result && typeof result === "object" && "reason" in (result as any)
-            ? String((result as any).reason)
-            : ""
-        if (active && inspectorEnabled) {
-          const isMac = window.desktopApi.platform === "darwin"
-          const shortcut = isMac ? "⌘C" : "Ctrl+C"
-          toast.success("Inspector Mode Active", {
-            description: `Hover over any element and press ${shortcut} to select it`,
-          })
-        } else if (!active && inspectorEnabled) {
-          toast.error("Inspector Mode Failed", {
-            description: `Inspector did not activate (${reason || "unknown"}).`,
-          })
+        // Step 1: Check if already injected (returns boolean — cloneable)
+        const hasBundle = await executeInWebview("!!window.__1CodeAgentation", true)
+
+        if (!hasBundle) {
+          // Step 2: Execute raw bundle as its own script (no template interpolation).
+          // The bundle is `"use strict";var __1CodeAgentation=(()=>{...})();`
+          // which evaluates as a var declaration (completion value = undefined = cloneable).
+          await executeInWebview(agentationBundleRef.current!, true)
+
+          // Step 3: Copy var to window (var inside executeJavaScript may not set window prop)
+          await executeInWebview(
+            "if(typeof __1CodeAgentation!=='undefined'){window.__1CodeAgentation=__1CodeAgentation}void 0;",
+            true,
+          )
         }
-      })
-      .catch((error) => {
-        pushPreviewLog("error", "inspector", "webview-inject-failed", error)
-      })
+
+        // Step 4: Mount (idempotent)
+        await executeInWebview(
+          "if(window.__1CodeAgentation&&window.__1CodeAgentation.mount&&!document.getElementById('__1code-agentation-root')){window.__1CodeAgentation.mount()}void 0;",
+          true,
+        )
+
+        toast.success("Inspector Mode Active", {
+          description: "Annotate elements and copy to add context to chat",
+        })
+      } else {
+        // Unmount
+        await executeInWebview(
+          "if(window.__1CodeAgentation&&window.__1CodeAgentation.unmount){window.__1CodeAgentation.unmount()}void 0;",
+          true,
+        )
+      }
+    }
+
+    run().catch((error) => {
+      pushPreviewLog("error", "inspector", "agentation-inject-failed", error)
+      if (inspectorEnabled) {
+        toast.error("Inspector Mode Failed")
+      }
+    })
   }, [executeInWebview, webviewEl, webviewDomReady, inspectorEnabled, pushPreviewLog])
 
   // Inspector Mode: Clipboard fallback (React Grab copies to clipboard on select)
@@ -1297,7 +863,11 @@ export function AgentPreview({
         const text = await window.desktopApi.clipboardRead()
         if (!isActive || !text || text === lastInspectorClipboardRef.current) return
 
-        const hasSignature = /in .+ at .+:\d+:\d+/.test(text) || text.includes("<HTML>")
+        const hasSignature =
+          text.includes("## Annotation") ||
+          text.includes("**Element**:") ||
+          text.includes("**Component**:") ||
+          (text.includes("**Selector**") && text.includes("**Comment**"))
         if (!hasSignature) return
 
         lastInspectorClipboardRef.current = text
