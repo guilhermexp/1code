@@ -2688,7 +2688,7 @@ export function AgentsSidebar({
     }
   }
 
-  const handleChatClick = useCallback((
+  const handleChatClick = useCallback(async (
     chatId: string,
     e?: React.MouseEvent,
     globalIndex?: number,
@@ -2752,6 +2752,24 @@ export function AgentsSidebar({
     const isRemote = chatId.startsWith('remote_')
     // Extract original ID for remote chats
     const originalId = isRemote ? chatId.replace(/^remote_/, '') : chatId
+
+    // Prevent opening same chat in multiple windows.
+    // Claim new chat BEFORE releasing old one — if claim fails, we keep the current chat.
+    if (window.desktopApi?.claimChat) {
+      const result = await window.desktopApi.claimChat(originalId)
+      if (!result.ok) {
+        toast.info("This workspace is already open in another window", {
+          description: "Switching to the existing window.",
+          duration: 3000,
+        })
+        await window.desktopApi.focusChatOwner(originalId)
+        return
+      }
+      // Release old chat only after new one is successfully claimed
+      if (selectedChatId && selectedChatId !== originalId) {
+        await window.desktopApi.releaseChat(selectedChatId)
+      }
+    }
 
     setSelectedChatId(originalId)
     setSelectedChatIsRemote(isRemote)

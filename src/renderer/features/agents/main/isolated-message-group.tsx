@@ -113,7 +113,7 @@ export const IsolatedMessageGroup = memo(function IsolatedMessageGroup({
 
   // Show rollback button only when this user turn has a valid rollback target.
   const canRollback = onRollback && !!rollbackTargetSdkUuid && !isStreaming
-  const canFork = !!onFork && !isStreaming
+  const canFork = !!onFork
 
   // Extract user message content
   // Note: file-content parts are hidden from UI but sent to agent

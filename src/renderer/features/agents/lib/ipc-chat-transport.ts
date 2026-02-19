@@ -10,6 +10,7 @@ const captureException = (error: Error, context?: Record<string, unknown>) => {
 }
 import { toast } from "sonner"
 import {
+  claudeLoginModalConfigAtom,
   agentsLoginModalOpenAtom,
   autoOfflineModeAtom,
   type CustomClaudeConfig,
@@ -358,6 +359,10 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                   prompt,
                   ...(images.length > 0 && { images }),
                   readyToRetry: false,
+                })
+                appStore.set(claudeLoginModalConfigAtom, {
+                  hideCustomModelSettingsLink: false,
+                  autoStartAuth: false,
                 })
                 // Show the Claude Code login modal
                 appStore.set(agentsLoginModalOpenAtom, true)

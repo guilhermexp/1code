@@ -70,6 +70,7 @@ import {
   defaultAgentModeAtom,
   isDesktopAtom, isFullscreenAtom,
   normalizeCustomClaudeConfig,
+  sessionInfoAtom,
   selectedOllamaModelAtom,
   soundNotificationsEnabledAtom
 } from "../../../lib/atoms"
@@ -129,6 +130,8 @@ import {
   pendingAuthRetryMessageAtom,
   pendingBuildPlanSubChatIdAtom,
   pendingConflictResolutionMessageAtom,
+  pendingChatHistoryAtom,
+  type PendingChatHistory,
   pendingMentionAtom,
   pendingPlanApprovalsAtom,
   pendingPrMessageAtom,
@@ -143,6 +146,7 @@ import {
   selectedDiffFilePathAtom,
   setLoading,
   subChatFilesAtom,
+  agentsSidebarOpenAtom,
   subChatModeAtomFamily,
   suppressInputFocusAtom,
   undoStackAtom,
@@ -165,6 +169,7 @@ import { usePastedTextFiles, type PastedTextFile } from "../hooks/use-pasted-tex
 import { useTextContextSelection } from "../hooks/use-text-context-selection"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
 import { ACPChatTransport } from "../lib/acp-chat-transport"
+import { formatHistoryForContext } from "../lib/export-chat"
 import {
   clearSubChatDraft,
   getSubChatDraftFull
@@ -357,7 +362,7 @@ const CodexIcon = (props: React.SVGProps<SVGSVGElement>) => (
 // Model options for Claude Code
 const claudeModels = [
   { id: "opus", name: "Opus 4.6" },
-  { id: "sonnet", name: "Sonnet 4.5" },
+  { id: "sonnet", name: "Sonnet 4.6" },
   { id: "haiku", name: "Haiku 4.5" },
 ]
 
@@ -2299,11 +2304,21 @@ const ChatViewInner = memo(function ChatViewInner({
   const {
     pastedTexts,
     addPastedText,
+    addChatHistoryFile,
     removePastedText,
     clearPastedTexts,
     pastedTextsRef,
     setPastedTextsFromDraft,
   } = usePastedTextFiles(subChatId)
+
+  // Consume pending chat history file when this sub-chat is the target
+  useEffect(() => {
+    const pending = appStore.get(pendingChatHistoryAtom)
+    if (pending && pending.subChatId === subChatId) {
+      addChatHistoryFile(pending.file)
+      appStore.set(pendingChatHistoryAtom, null)
+    }
+  }, [subChatId, addChatHistoryFile])
 
   // File contents cache - stores content for file mentions (keyed by mentionId)
   // This content gets added to the prompt when sending, without showing a separate card
@@ -2483,6 +2498,31 @@ const ChatViewInner = memo(function ChatViewInner({
     window.addEventListener("file-viewer-add-to-context", handler)
     return () => window.removeEventListener("file-viewer-add-to-context", handler)
   }, [addTextContext])
+
+  // Listen for file-tree "Add to Chat Context" — inserts file mention chip
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        id: string
+        label: string
+        path: string
+        repository: string
+        type: string
+      }
+      if (detail.id && detail.label) {
+        editorRef.current?.insertMention({
+          id: detail.id,
+          label: detail.label,
+          path: detail.path,
+          repository: detail.repository,
+          type: detail.type as "file" | "folder",
+        })
+        editorRef.current?.focus()
+      }
+    }
+    window.addEventListener("file-tree-mention", handler)
+    return () => window.removeEventListener("file-tree-mention", handler)
+  }, [])
 
   // Handler for quick comment trigger from popover
   const handleQuickComment = useCallback((text: string, source: TextSelectionSource, rect: DOMRect) => {
@@ -3859,12 +3899,12 @@ const ChatViewInner = memo(function ChatViewInner({
         return `@[${MENTION_PREFIXES.DIFF}${dtc.filePath}:${lineNum}:${preview}:${encodedText}]`
       })
 
-      // Add pasted text as pasted mentions (format: pasted:size:preview|filepath)
+      // Add pasted text / chat history as mentions (format: prefix:size:preview|filepath)
       // Using | as separator since filepath can contain colons
       const pastedTextMentions = currentPastedTexts.map((pt) => {
-        // Sanitize preview to remove special characters that break mention parsing
         const sanitizedPreview = pt.preview.replace(/[:\[\]|]/g, "")
-        return `@[${MENTION_PREFIXES.PASTED}${pt.size}:${sanitizedPreview}|${pt.filePath}]`
+        const prefix = pt.kind === "chatHistory" ? MENTION_PREFIXES.CHAT_HISTORY : MENTION_PREFIXES.PASTED
+        return `@[${prefix}${pt.size}:${sanitizedPreview}|${pt.filePath}]`
       })
 
       mentionPrefix = [...quoteMentions, ...diffMentions, ...pastedTextMentions].join(" ") + " "
@@ -4017,11 +4057,12 @@ const ChatViewInner = memo(function ChatViewInner({
         mentionPrefix += diffMentions.join(" ") + " "
       }
 
-      // Add pasted text as pasted mentions
+      // Add pasted text / chat history as mentions
       if (item.pastedTexts && item.pastedTexts.length > 0) {
         const pastedMentions = item.pastedTexts.map((pt) => {
           const sanitizedPreview = pt.preview.replace(/[:\[\]|]/g, "")
-          return `@[${MENTION_PREFIXES.PASTED}${pt.size}:${sanitizedPreview}|${pt.filePath}]`
+          const prefix = pt.kind === "chatHistory" ? MENTION_PREFIXES.CHAT_HISTORY : MENTION_PREFIXES.PASTED
+          return `@[${prefix}${pt.size}:${sanitizedPreview}|${pt.filePath}]`
         })
         mentionPrefix += pastedMentions.join(" ") + " "
       }
@@ -4425,6 +4466,71 @@ const ChatViewInner = memo(function ChatViewInner({
     [onProviderChange, subChatId],
   )
 
+  // Continue conversation with a different provider - creates new sub-chat with history attachment
+  const isContinuingRef = useRef(false)
+  const handleContinueWithProvider = useCallback(
+    async (targetProvider: "claude-code" | "codex") => {
+      if (isStreaming || isContinuingRef.current) return
+      if (!messages || messages.length === 0) return
+      isContinuingRef.current = true
+
+      try {
+        // 1. Format current messages as markdown
+        const historyMarkdown = formatHistoryForContext(messages as any)
+
+        // 2. Save to disk via writePastedText endpoint
+        const result = await trpcClient.files.writePastedText.mutate({
+          subChatId,
+          text: historyMarkdown,
+        })
+
+        // 3. Create new sub-chat
+        const newSubChat = await trpcClient.chats.createSubChat.mutate({
+          chatId: parentChatId,
+          name: "New Chat",
+          mode: subChatMode,
+        })
+
+        const newId = newSubChat.id
+
+        // 4. Store pending chat history for the new sub-chat to consume on mount
+        const historyFile: PendingChatHistory["file"] = {
+          id: `chatHistory_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          filePath: result.filePath,
+          filename: result.filename,
+          size: result.size,
+          preview: subChatNameRef.current?.trim() || "Previous Chat",
+          createdAt: new Date(),
+          kind: "chatHistory",
+        }
+        appStore.set(pendingChatHistoryAtom, { subChatId: newId, file: historyFile })
+
+        // 5. Update Zustand store and switch to new tab
+        const store = useAgentSubChatStore.getState()
+        store.addToAllSubChats({
+          id: newId,
+          name: "New Chat",
+          created_at: new Date().toISOString(),
+          mode: subChatMode,
+        })
+        appStore.set(subChatModeAtomFamily(newId), subChatMode)
+        store.addToOpenSubChats(newId)
+        store.setActiveSubChat(newId)
+
+        // 6. Set provider override AFTER tab switch so the outer component picks it up
+        // We call onProviderChange which sets subChatProviderOverrides in the outer scope
+        // The new sub-chat has 0 messages so the guard in handleProviderChange will pass
+        onProviderChange?.(newId, targetProvider)
+      } catch (error) {
+        console.error("[handleContinueWithProvider] Error:", error)
+        toast.error("Failed to continue with provider")
+      } finally {
+        isContinuingRef.current = false
+      }
+    },
+    [isStreaming, messages, subChatId, parentChatId, subChatMode, onProviderChange],
+  )
+
   return (
     <SearchHighlightProvider>
       <div className="flex flex-col flex-1 min-h-0 relative">
@@ -4631,6 +4737,8 @@ const ChatViewInner = memo(function ChatViewInner({
         onInputContentChange={setInputHasContent}
         onSubmitWithQuestionAnswer={submitWithQuestionAnswerCallback}
         onProviderChange={handleInputProviderChange}
+        onContinueWithProvider={handleContinueWithProvider}
+        isActive={isActive}
       />
 
         {/* Scroll to bottom button - isolated component to avoid re-renders during streaming */}
@@ -4690,6 +4798,7 @@ export function ChatView({
 
   const isDesktop = useAtomValue(isDesktopAtom)
   const isFullscreen = useAtomValue(isFullscreenAtom)
+  const sidebarOpen = useAtomValue(agentsSidebarOpenAtom)
   const customClaudeConfig = useAtomValue(customClaudeConfigAtom)
   const selectedOllamaModel = useAtomValue(selectedOllamaModelAtom)
   const normalizedCustomClaudeConfig =
@@ -5027,14 +5136,16 @@ export function ChatView({
   }, [isDiffSidebarOpen, diffDisplayMode, isDetailsSidebarOpen, setDiffDisplayMode, setIsDetailsSidebarOpen, setIsDiffSidebarOpen])
 
   // Hide/show traffic lights based on full-page diff or full-page file viewer
+  // When exiting full-page mode, restore based on sidebar state (not unconditionally true)
   useEffect(() => {
     if (!isDesktop || isFullscreen) return
     if (typeof window === "undefined" || !window.desktopApi?.setTrafficLightVisibility) return
 
     const isFullPageDiff = isDiffSidebarOpen && diffDisplayMode === "full-page"
     const isFullPageFileViewer = !!fileViewerPath && fileViewerDisplayMode === "full-page"
-    window.desktopApi.setTrafficLightVisibility(!isFullPageDiff && !isFullPageFileViewer)
-  }, [isDiffSidebarOpen, diffDisplayMode, fileViewerPath, fileViewerDisplayMode, isDesktop, isFullscreen])
+    const shouldHide = isFullPageDiff || isFullPageFileViewer
+    window.desktopApi.setTrafficLightVisibility(shouldHide ? false : sidebarOpen)
+  }, [isDiffSidebarOpen, diffDisplayMode, fileViewerPath, fileViewerDisplayMode, isDesktop, isFullscreen, sidebarOpen])
 
   // Track diff sidebar width for responsive header
   const storedDiffSidebarWidth = useAtomValue(agentsDiffSidebarWidthAtom)
@@ -5158,6 +5269,7 @@ export function ChatView({
   const [isReviewing, setIsReviewing] = useState(false)
   // Subchat filter setter - used by handleReview to filter by active subchat
   const setFilteredSubChatId = useSetAtom(filteredSubChatIdAtom)
+  const setSessionInfo = useSetAtom(sessionInfoAtom)
 
   // Determine if we're in sandbox mode
   const chatSourceMode = useAtomValue(chatSourceModeAtom)
@@ -6185,6 +6297,105 @@ Make sure to preserve all functionality from both branches when resolving confli
     [agentChat, subChatProviderOverrides],
   )
 
+  const activeSubChatProvider = useMemo(
+    () => inferProviderFromMessages(activeSubChatId || undefined),
+    [activeSubChatId, inferProviderFromMessages],
+  )
+
+  const { data: codexMcpConfig } = trpc.codex.getAllMcpConfig.useQuery(undefined, {
+    enabled: activeSubChatProvider === "codex",
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const codexMcpSessionData = useMemo(() => {
+    if (activeSubChatProvider !== "codex") return null
+    if (!codexMcpConfig) return null
+
+    const groups = codexMcpConfig?.groups || []
+    if (groups.length === 0) {
+      return {
+        mcpServers: [],
+        mcpTools: [],
+      }
+    }
+
+    const orderedGroups = [
+      ...groups.filter((group) => group.projectPath === null),
+      ...groups.filter(
+        (group) =>
+          group.projectPath !== null &&
+          !!originalProjectPath &&
+          group.projectPath === originalProjectPath,
+      ),
+    ]
+
+    const effectiveServers = new Map<string, (typeof groups)[number]["mcpServers"][number]>()
+    for (const group of orderedGroups) {
+      for (const server of group.mcpServers || []) {
+        if (typeof server?.name !== "string" || server.name.length === 0) continue
+        effectiveServers.set(server.name, server)
+      }
+    }
+
+    const mcpServers: Array<{
+      name: string
+      status: "connected" | "failed" | "pending" | "needs-auth"
+      serverInfo?: { name: string; version: string; icons?: Array<{ src: string }> }
+      error?: string
+    }> = []
+    const mcpToolIds = new Set<string>()
+
+    for (const server of effectiveServers.values()) {
+      const status =
+        server.status === "connected" ||
+        server.status === "failed" ||
+        server.status === "pending" ||
+        server.status === "needs-auth"
+          ? server.status
+          : "failed"
+
+      mcpServers.push({
+        name: server.name,
+        status,
+        ...(server.serverInfo ? { serverInfo: server.serverInfo } : {}),
+        ...(server.error ? { error: server.error } : {}),
+      })
+
+      for (const tool of Array.isArray(server.tools) ? server.tools : []) {
+        const toolName =
+          typeof tool === "string"
+            ? tool
+            : typeof tool?.name === "string"
+              ? tool.name
+              : null
+        if (!toolName) continue
+        mcpToolIds.add(`mcp__${server.name}__${toolName}`)
+      }
+    }
+
+    return {
+      mcpServers,
+      mcpTools: [...mcpToolIds].sort((a, b) => a.localeCompare(b)),
+    }
+  }, [activeSubChatProvider, codexMcpConfig?.groups, originalProjectPath])
+
+  useEffect(() => {
+    if (activeSubChatProvider !== "codex" || !codexMcpSessionData) return
+
+    setSessionInfo((prev) => {
+      const nonMcpTools = (prev?.tools || []).filter(
+        (tool) => !tool.startsWith("mcp__"),
+      )
+
+      return {
+        tools: [...nonMcpTools, ...codexMcpSessionData.mcpTools],
+        mcpServers: codexMcpSessionData.mcpServers,
+        plugins: prev?.plugins || [],
+        skills: prev?.skills || [],
+      }
+    })
+  }, [activeSubChatProvider, codexMcpSessionData, setSessionInfo])
+
   // Create or get Chat instance for a sub-chat
   const getOrCreateChat = useCallback(
     (subChatId: string): Chat<any> | null => {
@@ -6289,6 +6500,7 @@ Make sure to preserve all functionality from both branches when resolving confli
             chatId,
             subChatId,
             cwd: worktreePath,
+            projectPath,
             mode: subChatMode,
             provider: "codex",
           })
@@ -6547,6 +6759,7 @@ Make sure to preserve all functionality from both branches when resolving confli
           chatId,
           subChatId: newId,
           cwd: worktreePath,
+          projectPath,
           mode: newSubChatMode,
           provider: "codex",
         })
@@ -7598,6 +7811,7 @@ Make sure to preserve all functionality from both branches when resolving confli
               // Open the diff sidebar
               setIsDiffSidebarOpen(true)
             }}
+            onOpenFile={setFileViewerPath}
             remoteInfo={remoteInfo}
             isRemoteChat={!!remoteInfo}
           />

@@ -29,6 +29,8 @@ import {
 import { cleanupGitWatchers } from "./lib/git/watcher"
 import { startStaticServer, stopStaticServer, getStaticServerPort } from "./lib/static-server"
 import { cancelAllPendingOAuth, handleMcpOAuthCallback } from "./lib/mcp-auth"
+import { getAllMcpConfigHandler } from "./lib/trpc/routers/claude"
+import { getAllCodexMcpConfigHandler } from "./lib/trpc/routers/codex"
 import {
   createMainWindow,
   createWindow,
@@ -614,6 +616,15 @@ if (gotTheLock) {
     // Track devtools unlock state (hidden feature - 5 clicks on Beta tab)
     let devToolsUnlocked = false
 
+    // Menu icons: PNG template for settings (auto light/dark via "Template" suffix),
+    // macOS native SF Symbol for terminal
+    const settingsMenuIcon = nativeImage.createFromPath(
+      join(__dirname, "../../build/settingsTemplate.png")
+    )
+    const terminalMenuIcon = process.platform === "darwin"
+      ? nativeImage.createFromNamedImage("terminal")?.resize({ width: 12, height: 12 })
+      : null
+
     // Function to build and set application menu
     const buildMenu = () => {
       // Show devtools menu item only in dev mode or when unlocked
@@ -622,7 +633,10 @@ if (gotTheLock) {
         {
           label: app.name,
           submenu: [
-            { role: "about", label: "About 1Code" },
+            {
+              label: "About 1Code",
+              click: () => app.showAboutPanel(),
+            },
             {
               label: updateAvailable
                 ? `Update to v${availableVersion}...`
@@ -643,9 +657,22 @@ if (gotTheLock) {
             },
             { type: "separator" },
             {
+              label: "Settings...",
+              ...(settingsMenuIcon && { icon: settingsMenuIcon }),
+              accelerator: "CmdOrCtrl+,",
+              click: () => {
+                const win = getWindow()
+                if (win) {
+                  win.webContents.send("shortcut:open-settings")
+                }
+              },
+            },
+            { type: "separator" },
+            {
               label: isCliInstalled()
                 ? "Uninstall '1code' Command..."
                 : "Install '1code' Command in PATH...",
+              ...(terminalMenuIcon && { icon: terminalMenuIcon }),
               click: async () => {
                 const { dialog } = await import("electron")
                 if (isCliInstalled()) {
@@ -894,8 +921,17 @@ if (gotTheLock) {
     // This populates the cache so all future sessions can use filtered MCP servers
     setTimeout(async () => {
       try {
-        const { getAllMcpConfigHandler } = await import("./lib/trpc/routers/claude")
-        await getAllMcpConfigHandler()
+        const results = await Promise.allSettled([
+          getAllMcpConfigHandler(),
+          getAllCodexMcpConfigHandler(),
+        ])
+
+        if (results[0].status === "rejected") {
+          console.error("[App] Claude MCP warmup failed:", results[0].reason)
+        }
+        if (results[1].status === "rejected") {
+          console.error("[App] Codex MCP warmup failed:", results[1].reason)
+        }
       } catch (error) {
         console.error("[App] MCP warmup failed:", error)
       }

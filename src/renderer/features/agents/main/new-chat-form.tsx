@@ -245,6 +245,13 @@ export function NewChatForm({
   const anthropicOnboardingCompleted = useAtomValue(anthropicOnboardingCompletedAtom)
   const apiKeyOnboardingCompleted = useAtomValue(apiKeyOnboardingCompletedAtom)
   const codexOnboardingCompleted = useAtomValue(codexOnboardingCompletedAtom)
+  const { data: claudeCodeIntegration } =
+    trpc.claudeCode.getIntegration.useQuery()
+  const isClaudeConnected =
+    Boolean(claudeCodeIntegration?.isConnected) ||
+    anthropicOnboardingCompleted ||
+    apiKeyOnboardingCompleted ||
+    hasCustomClaudeConfig
   const setSettingsDialogOpen = useSetAtom(agentsSettingsDialogOpenAtom)
   const setSettingsActiveTab = useSetAtom(agentsSettingsDialogActiveTabAtom)
   const setJustCreatedIds = useSetAtom(justCreatedIdsAtom)
@@ -1176,7 +1183,8 @@ export function NewChatForm({
         .map((pt) => {
           // Sanitize preview to remove special characters that break mention parsing
           const sanitizedPreview = pt.preview.replace(/[:\[\]|]/g, "")
-          return `@[${MENTION_PREFIXES.PASTED}${pt.size}:${sanitizedPreview}|${pt.filePath}]`
+          const prefix = pt.kind === "chatHistory" ? MENTION_PREFIXES.CHAT_HISTORY : MENTION_PREFIXES.PASTED
+          return `@[${prefix}${pt.size}:${sanitizedPreview}|${pt.filePath}]`
         })
         .join(" ")
       finalMessage = pastedMentions + (finalMessage ? " " + finalMessage : "")
@@ -1876,6 +1884,10 @@ export function NewChatForm({
                             setLastSelectedAgentId(provider)
                           }}
                           selectedModelLabel={selectedModelLabel}
+                          onOpenModelsSettings={() => {
+                            setSettingsActiveTab("models")
+                            setSettingsDialogOpen(true)
+                          }}
                           claude={{
                             models: availableModels.models.filter((m) => !hiddenModels.includes(m.id)),
                             selectedModelId: selectedModel?.id,
@@ -1893,7 +1905,7 @@ export function NewChatForm({
                             selectedOllamaModel: currentOllamaModel,
                             recommendedOllamaModel: availableModels.recommendedModel,
                             onSelectOllamaModel: setSelectedOllamaModel,
-                            isConnected: anthropicOnboardingCompleted || apiKeyOnboardingCompleted || hasCustomClaudeConfig,
+                            isConnected: isClaudeConnected,
                             thinkingEnabled,
                             onThinkingChange: setThinkingEnabled,
                           }}
