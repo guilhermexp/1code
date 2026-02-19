@@ -14,6 +14,7 @@ import { join } from "path"
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs"
 import { createIPCHandler } from "trpc-electron/main"
 import { createAppRouter } from "../lib/trpc/routers"
+import { setOptOut } from "../lib/analytics"
 import { getAuthManager, handleAuthCode, getBaseUrl } from "../index"
 import { registerGitWatcherIPC } from "../lib/git/watcher"
 import { registerThemeScannerIPC } from "../lib/vscode-theme-scanner"
@@ -271,8 +272,7 @@ function registerIpcHandlers(): void {
   })
 
   // Analytics
-  ipcMain.handle("analytics:set-opt-out", async (_event, optedOut: boolean) => {
-    const { setOptOut } = await import("../lib/analytics")
+  ipcMain.handle("analytics:set-opt-out", (_event, optedOut: boolean) => {
     setOptOut(optedOut)
   })
 
@@ -859,10 +859,6 @@ export async function createWindow(options?: { chatId?: string; subChatId?: stri
       const url = new URL(devServerUrl)
       buildParams(url.searchParams)
       window.loadURL(url.toString())
-      // Only open devtools for first window in development
-      if (!app.isPackaged && windowId === "main") {
-        window.webContents.openDevTools()
-      }
     } else {
       // Production: use local HTTP server to avoid file:// (fixes third-party cookie blocking in iframes)
       const port = getStaticServerPort()

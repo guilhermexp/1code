@@ -95,6 +95,16 @@ function normalizePreviewPath(rawPath: string): string {
   }
 }
 
+function isLoopbackUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl)
+    const host = parsed.hostname.toLowerCase()
+    return host === "localhost" || host === "127.0.0.1"
+  } catch {
+    return false
+  }
+}
+
 function serializeLogValue(value: unknown): string {
   if (value instanceof Error) {
     return value.stack || value.message
@@ -547,13 +557,32 @@ export function AgentPreview({
         validatedURL?: string
         isMainFrame?: boolean
       }
+      const errorDescription = payload.errorDescription ?? "load-failed"
+      const validatedURL = payload.validatedURL ?? ""
+      const isConnectionRefused =
+        errorDescription.includes("ERR_CONNECTION_REFUSED") ||
+        payload.errorCode === -102
+
+      if (
+        payload.isMainFrame !== false &&
+        isConnectionRefused &&
+        editableCustomUrl &&
+        isLoopbackUrl(validatedURL || editableCustomUrl)
+      ) {
+        setEditableCustomUrl("")
+        setLoadedPath("/")
+        setCurrentPath("/")
+        setPersistedPath("/")
+        toast.warning("Preview local indisponível (localhost). URL resetada nesta sessão.")
+      }
+
       if (payload.isMainFrame !== false) {
         pushPreviewLog(
           "error",
           "webview-load",
           `code=${payload.errorCode ?? "unknown"}`,
-          payload.errorDescription ?? "load-failed",
-          payload.validatedURL ?? "",
+          errorDescription,
+          validatedURL,
         )
       }
       handleStopLoading()
@@ -625,7 +654,9 @@ export function AgentPreview({
     webviewEl,
     webviewDomReady,
     cacheBuster,
+    editableCustomUrl,
     pushPreviewLog,
+    setPersistedPath,
     updateWebviewNavState,
   ])
 

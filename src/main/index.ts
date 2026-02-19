@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { app, BrowserWindow, Menu, session } from "electron"
+import { app, BrowserWindow, Menu, nativeImage, session } from "electron"
 import { existsSync, readFileSync, readlinkSync, unlinkSync } from "fs"
 import { createServer } from "http"
 import { join } from "path"
