@@ -1,10 +1,13 @@
 import { createServer, type Server } from "http"
 import { readFile } from "fs/promises"
 import { join, extname } from "path"
-import { existsSync } from "fs"
+import { existsSync, readFileSync, writeFileSync } from "fs"
+import { app } from "electron"
 
 let server: Server | null = null
 let serverPort: number | null = null
+const STATIC_SERVER_PORT_PREF_FILE = "renderer-port.json"
+const STATIC_SERVER_DEFAULT_PORT = 32173
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -37,7 +40,8 @@ const MIME_TYPES: Record<string, string> = {
  * Binds to localhost so the renderer shares the same origin hostname
  * as preview iframes (e.g. localhost:3001). Using 127.0.0.1 would be
  * a different origin and cause third-party cookie blocking.
- * Uses port 0 so the OS assigns a free port.
+ * Uses a persisted preferred port so renderer origin stays stable across app restarts.
+ * Stable origin preserves localStorage-backed onboarding/settings state.
  */
 export function startStaticServer(rootDir: string): Promise<number> {
   if (server && serverPort !== null) {
@@ -45,6 +49,9 @@ export function startStaticServer(rootDir: string): Promise<number> {
   }
 
   return new Promise((resolve, reject) => {
+    const preferredPort = loadPreferredPort()
+    const fallbackPorts = [preferredPort, preferredPort + 1, preferredPort + 2, 0]
+
     server = createServer(async (req, res) => {
       try {
         const url = new URL(req.url || "/", "http://localhost")
@@ -95,21 +102,49 @@ export function startStaticServer(rootDir: string): Promise<number> {
       }
     })
 
-    server.listen(0, "localhost", () => {
-      const addr = server!.address()
-      if (addr && typeof addr === "object") {
-        serverPort = addr.port
-        console.log(`[StaticServer] Serving ${rootDir} on http://localhost:${serverPort}`)
-        resolve(serverPort)
-      } else {
-        reject(new Error("Failed to get server address"))
+    const tryListen = (index: number) => {
+      if (!server) {
+        reject(new Error("Static server was not initialized"))
+        return
       }
-    })
 
-    server.on("error", (err) => {
-      console.error("[StaticServer] Server error:", err)
-      reject(err)
-    })
+      const nextPort = fallbackPorts[index]
+      if (typeof nextPort !== "number") {
+        reject(new Error("Failed to bind static server to an available port"))
+        return
+      }
+
+      const onListening = () => {
+        const addr = server!.address()
+        if (addr && typeof addr === "object") {
+          serverPort = addr.port
+          savePreferredPort(serverPort)
+          console.log(`[StaticServer] Serving ${rootDir} on http://localhost:${serverPort}`)
+          resolve(serverPort)
+        } else {
+          reject(new Error("Failed to get server address"))
+        }
+      }
+
+      const onError = (err: NodeJS.ErrnoException) => {
+        server?.off("listening", onListening)
+        server?.off("error", onError)
+
+        if (err.code === "EADDRINUSE") {
+          tryListen(index + 1)
+          return
+        }
+
+        console.error("[StaticServer] Server error:", err)
+        reject(err)
+      }
+
+      server.once("listening", onListening)
+      server.once("error", onError)
+      server.listen(nextPort, "localhost")
+    }
+
+    tryListen(0)
   })
 }
 
@@ -130,5 +165,35 @@ export function stopStaticServer(): void {
     server = null
     serverPort = null
     console.log("[StaticServer] Stopped")
+  }
+}
+
+function getPortPreferencePath(): string {
+  return join(app.getPath("userData"), STATIC_SERVER_PORT_PREF_FILE)
+}
+
+function loadPreferredPort(): number {
+  const prefPath = getPortPreferencePath()
+
+  try {
+    if (existsSync(prefPath)) {
+      const parsed = JSON.parse(readFileSync(prefPath, "utf-8")) as { port?: number }
+      if (typeof parsed.port === "number" && parsed.port > 0 && parsed.port <= 65535) {
+        return parsed.port
+      }
+    }
+  } catch (error) {
+    console.warn("[StaticServer] Failed to read preferred port:", error)
+  }
+
+  return STATIC_SERVER_DEFAULT_PORT
+}
+
+function savePreferredPort(port: number): void {
+  const prefPath = getPortPreferencePath()
+  try {
+    writeFileSync(prefPath, JSON.stringify({ port }, null, 2), "utf-8")
+  } catch (error) {
+    console.warn("[StaticServer] Failed to save preferred port:", error)
   }
 }
