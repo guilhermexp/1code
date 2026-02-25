@@ -29,13 +29,14 @@ import {
 import { cleanupGitWatchers } from "./lib/git/watcher"
 import { startStaticServer, stopStaticServer, getStaticServerPort } from "./lib/static-server"
 import { cancelAllPendingOAuth, handleMcpOAuthCallback } from "./lib/mcp-auth"
-import { getAllMcpConfigHandler } from "./lib/trpc/routers/claude"
-import { getAllCodexMcpConfigHandler } from "./lib/trpc/routers/codex"
+import { getAllMcpConfigHandler, hasActiveClaudeSessions, abortAllClaudeSessions } from "./lib/trpc/routers/claude"
+import { getAllCodexMcpConfigHandler, hasActiveCodexStreams, abortAllCodexStreams } from "./lib/trpc/routers/codex"
 import {
   createMainWindow,
   createWindow,
   getWindow,
   getAllWindows,
+  setIsQuitting,
 } from "./windows/main"
 import { windowManager } from "./windows/window-manager"
 
@@ -53,6 +54,10 @@ if (IS_DEV) {
   app.setPath("userData", devUserData)
   console.log("[Dev] Using separate userData path:", devUserData)
 }
+
+// Increase V8 old-space limit for renderer/main processes to reduce OOM frequency
+// under heavy multi-chat workloads. Must be set before app readiness/window creation.
+app.commandLine.appendSwitch("js-flags", "--max-old-space-size=8192")
 
 // Initialize Sentry before app is ready (production only)
 // Use dynamic import to avoid loading Sentry module in dev mode (causes IPC errors)
@@ -710,7 +715,32 @@ if (gotTheLock) {
             { role: "hideOthers" },
             { role: "unhide" },
             { type: "separator" },
-            { role: "quit" },
+            {
+              label: "Quit",
+              accelerator: "CmdOrCtrl+Q",
+              click: async () => {
+                if (hasActiveClaudeSessions() || hasActiveCodexStreams()) {
+                  const { dialog } = await import("electron")
+                  const { response } = await dialog.showMessageBox({
+                    type: "warning",
+                    buttons: ["Cancel", "Quit Anyway"],
+                    defaultId: 0,
+                    cancelId: 0,
+                    title: "Active Sessions",
+                    message: "There are active agent sessions running.",
+                    detail: "Quitting now will interrupt them. Are you sure you want to quit?",
+                  })
+                  if (response === 1) {
+                    abortAllClaudeSessions()
+                    abortAllCodexStreams()
+                    setIsQuitting(true)
+                    app.quit()
+                  }
+                } else {
+                  app.quit()
+                }
+              },
+            },
           ],
         },
         {
@@ -767,8 +797,37 @@ if (gotTheLock) {
           label: "View",
           submenu: [
             // Cmd+R is disabled to prevent accidental page refresh
-            // Use Cmd+Shift+R (Force Reload) for intentional reloads
-            { role: "forceReload" },
+            // Cmd+Shift+R reloads but warns if there are active streams
+            {
+              label: "Force Reload",
+              accelerator: "CmdOrCtrl+Shift+R",
+              click: () => {
+                const win = BrowserWindow.getFocusedWindow()
+                if (!win) return
+                if (hasActiveClaudeSessions() || hasActiveCodexStreams()) {
+                  dialog
+                    .showMessageBox(win, {
+                      type: "warning",
+                      buttons: ["Cancel", "Reload Anyway"],
+                      defaultId: 0,
+                      cancelId: 0,
+                      title: "Active Sessions",
+                      message: "There are active agent sessions running.",
+                      detail:
+                        "Reloading will interrupt them. The current progress will be saved. Are you sure you want to reload?",
+                    })
+                    .then(({ response }) => {
+                      if (response === 1) {
+                        abortAllClaudeSessions()
+                        abortAllCodexStreams()
+                        win.webContents.reloadIgnoringCache()
+                      }
+                    })
+                } else {
+                  win.webContents.reloadIgnoringCache()
+                }
+              },
+            },
             // Only show DevTools in dev mode or when unlocked via hidden feature
             ...(showDevTools ? [{ role: "toggleDevTools" as const }] : []),
             { type: "separator" },
