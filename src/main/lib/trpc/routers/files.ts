@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
-import { readdir, stat, readFile, writeFile, mkdir, rename as fsRename, rm } from "node:fs/promises"
+import { readdir, stat, readFile, writeFile, mkdir, rename as fsRename, rm, copyFile } from "node:fs/promises"
 import { join, relative, basename, extname, dirname, resolve, isAbsolute } from "node:path"
 import { app, shell } from "electron"
 import { watch } from "node:fs"
@@ -481,6 +481,57 @@ export const filesRouter = router({
         filename: finalFilename,
         size: text.length,
       }
+    }),
+
+  /**
+   * Import a dropped file into a target directory (Files panel drag-and-drop)
+   * Supports direct filesystem copy when Electron provides a source path, with
+   * base64 fallback for environments that don't expose it.
+   */
+  importDroppedFile: publicProcedure
+    .input(z.object({
+      targetDirectory: z.string(),
+      fileName: z.string().min(1),
+      sourcePath: z.string().optional(),
+      base64Data: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { targetDirectory, fileName, sourcePath, base64Data } = input
+
+      validatePathSafe(targetDirectory)
+      validateFileName(fileName)
+
+      if (!sourcePath && !base64Data) {
+        throw new Error("Missing dropped file data")
+      }
+
+      const targetPath = join(targetDirectory, fileName)
+      validatePathSafe(targetPath, targetDirectory)
+
+      try {
+        await stat(targetPath)
+        throw new Error(`File already exists: ${fileName}`)
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        if (!msg.includes("ENOENT") && !msg.includes("no such file")) {
+          throw error
+        }
+      }
+
+      await mkdir(targetDirectory, { recursive: true })
+
+      if (sourcePath) {
+        validatePathSafe(sourcePath)
+        if (resolve(sourcePath) === resolve(targetPath)) {
+          throw new Error("Source and destination are the same file")
+        }
+        await copyFile(sourcePath, targetPath)
+      } else {
+        const buffer = Buffer.from(base64Data!, "base64")
+        await writeFile(targetPath, buffer)
+      }
+
+      return { success: true as const, path: targetPath, fileName }
     }),
 
   /**

@@ -34,6 +34,8 @@ interface FileTreeNode {
   children?: FileTreeNode[]
 }
 
+type ElectronDroppedFile = File & { path?: string }
+
 interface FilesTabProps {
   worktreePath: string | null
   onSelectFile: (filePath: string) => void
@@ -145,6 +147,26 @@ function parentPath(p: string): string | null {
   return i > 0 ? p.slice(0, i) : null
 }
 
+function hasDraggedFiles(event: { dataTransfer: DataTransfer | null }): boolean {
+  const dt = event.dataTransfer
+  if (!dt) return false
+  return Array.from(dt.types || []).includes("Files")
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : ""
+      const base64 = result.split(",")[1]
+      if (base64) resolve(base64)
+      else reject(new Error("Failed to encode dropped file"))
+    }
+    reader.onerror = () => reject(reader.error || new Error("Failed to read dropped file"))
+    reader.readAsDataURL(file)
+  })
+}
+
 // ============================================================================
 // TreeNode — receives only primitive/stable props for effective memo
 // ============================================================================
@@ -224,6 +246,9 @@ const TreeNode = memo(function TreeNode({
             ref={rowRef}
             role="treeitem"
             aria-expanded={isFolder ? isExpanded : undefined}
+            data-file-tree-node="true"
+            data-node-path={node.path}
+            data-node-type={node.type}
             onMouseDown={handleMouseDown}
             onClick={handleClick}
             className={cn(
@@ -374,12 +399,17 @@ export const FilesTab = memo(forwardRef<FilesTabHandle, FilesTabProps>(function 
   // Rename dialog state
   const [renameTarget, setRenameTarget] = useState<FileTreeNode | null>(null)
   const [renameLoading, setRenameLoading] = useState(false)
+  const [isDragOverFiles, setIsDragOverFiles] = useState(false)
+  const [isDropImporting, setIsDropImporting] = useState(false)
+  const dragDepthRef = useRef(0)
 
   // tRPC mutations
   const openInAppMutation = trpc.external.openInApp.useMutation()
   const openInFinderMutation = trpc.external.openInFinder.useMutation()
   const renameMutation = trpc.files.renameFile.useMutation()
   const deleteMutation = trpc.files.deleteFile.useMutation()
+  const clearCacheMutation = trpc.files.clearCache.useMutation()
+  const importDroppedFileMutation = trpc.files.importDroppedFile.useMutation()
   const trpcUtils = trpc.useUtils()
 
   // ---- Data ----
@@ -472,6 +502,109 @@ export const FilesTab = memo(forwardRef<FilesTabHandle, FilesTabProps>(function 
   const invalidateFiles = useCallback(() => {
     trpcUtils.files.search.invalidate()
   }, [trpcUtils])
+
+  const resolveDropTargetDirectory = useCallback((target: EventTarget | null) => {
+    if (!worktreePath || !(target instanceof HTMLElement)) return worktreePath
+    const row = target.closest("[data-file-tree-node='true']") as HTMLElement | null
+    if (!row) return worktreePath
+    const nodePath = row.dataset.nodePath || ""
+    const nodeType = row.dataset.nodeType || "file"
+    const relDir = nodeType === "folder" ? nodePath : (parentPath(nodePath) || "")
+    return relDir ? `${worktreePath}/${relDir}` : worktreePath
+  }, [worktreePath])
+
+  const handleFilesDragEnter = useCallback((e: React.DragEvent) => {
+    if (!hasDraggedFiles(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current += 1
+    setIsDragOverFiles(true)
+  }, [])
+
+  const handleFilesDragOver = useCallback((e: React.DragEvent) => {
+    if (!hasDraggedFiles(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = "copy"
+    if (!isDragOverFiles) setIsDragOverFiles(true)
+  }, [isDragOverFiles])
+
+  const handleFilesDragLeave = useCallback((e: React.DragEvent) => {
+    if (!hasDraggedFiles(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) {
+      setIsDragOverFiles(false)
+    }
+  }, [])
+
+  const handleFilesDrop = useCallback(async (e: React.DragEvent) => {
+    if (!worktreePath || !hasDraggedFiles(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    dragDepthRef.current = 0
+    setIsDragOverFiles(false)
+
+    const droppedFiles = Array.from(e.dataTransfer.files || []) as ElectronDroppedFile[]
+    if (droppedFiles.length === 0) return
+
+    const targetDirectory = resolveDropTargetDirectory(e.target)
+    if (!targetDirectory) return
+
+    setIsDropImporting(true)
+    let importedCount = 0
+    const failedNames: string[] = []
+
+    try {
+      for (const file of droppedFiles) {
+        try {
+          // Electron usually exposes file.path for OS drag/drop; fallback to base64 upload.
+          const sourcePath = typeof file.path === "string" && file.path ? file.path : undefined
+          const base64Data = sourcePath ? undefined : await fileToBase64(file)
+
+          await importDroppedFileMutation.mutateAsync({
+            targetDirectory,
+            fileName: file.name,
+            sourcePath,
+            base64Data,
+          })
+          importedCount += 1
+        } catch (err) {
+          console.error("[files-tab] Failed to import dropped file", file.name, err)
+          failedNames.push(file.name)
+        }
+      }
+
+      if (importedCount > 0) {
+        await clearCacheMutation.mutateAsync({ projectPath: worktreePath })
+        invalidateFiles()
+      }
+
+      if (importedCount > 0 && failedNames.length === 0) {
+        toast.success(
+          importedCount === 1 ? `Imported ${droppedFiles[0]?.name ?? "file"}` : `Imported ${importedCount} files`,
+        )
+      } else if (importedCount > 0 && failedNames.length > 0) {
+        toast.warning(`Imported ${importedCount} file(s), ${failedNames.length} failed`, {
+          description: failedNames.slice(0, 3).join(", "),
+        })
+      } else if (failedNames.length > 0) {
+        toast.error("Failed to import dropped files", {
+          description: failedNames.slice(0, 3).join(", "),
+        })
+      }
+    } finally {
+      setIsDropImporting(false)
+    }
+  }, [
+    worktreePath,
+    resolveDropTargetDirectory,
+    importDroppedFileMutation,
+    clearCacheMutation,
+    invalidateFiles,
+  ])
 
   const handleContextAction = useCallback((action: string, node: FileTreeNode) => {
     const absolutePath = toAbsolute(node.path)
@@ -729,7 +862,17 @@ export const FilesTab = memo(forwardRef<FilesTabHandle, FilesTabProps>(function 
   }
 
   return (
-    <div className={cn("flex flex-col h-full min-w-0 overflow-hidden", className)}>
+    <div
+      className={cn(
+        "relative flex flex-col h-full min-w-0 overflow-hidden",
+        isDragOverFiles && "ring-1 ring-primary/60 bg-primary/5",
+        className,
+      )}
+      onDragEnter={handleFilesDragEnter}
+      onDragOver={handleFilesDragOver}
+      onDragLeave={handleFilesDragLeave}
+      onDrop={handleFilesDrop}
+    >
       <div className="flex-1 overflow-y-auto pb-2">
         {tree.length === 0 ? (
           <div className="px-2 py-4 text-center">
@@ -763,6 +906,19 @@ export const FilesTab = memo(forwardRef<FilesTabHandle, FilesTabProps>(function 
           </div>
         )}
       </div>
+
+      {(isDragOverFiles || isDropImporting) && (
+        <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center bg-background/35 backdrop-blur-[1px]">
+          <div className="rounded-md border border-primary/40 bg-background px-3 py-2 shadow-sm">
+            <p className="text-xs font-medium text-foreground">
+              {isDropImporting ? "Importing files..." : "Drop files to import"}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Drop on a folder to import there
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Rename Dialog */}
       <RenameDialog
