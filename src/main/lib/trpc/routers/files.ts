@@ -363,7 +363,7 @@ export const filesRouter = router({
     }),
 
   /**
-   * Read a binary file as base64 (for images)
+   * Read a binary file as base64 (for image/video preview)
    */
   readBinaryFile: publicProcedure
     .input(z.object({ filePath: z.string() }))
@@ -391,6 +391,17 @@ export const filesRouter = router({
           ".webp": "image/webp",
           ".ico": "image/x-icon",
           ".bmp": "image/bmp",
+          ".avif": "image/avif",
+          ".tif": "image/tiff",
+          ".tiff": "image/tiff",
+          ".heic": "image/heic",
+          ".heif": "image/heif",
+          ".mp4": "video/mp4",
+          ".webm": "video/webm",
+          ".mov": "video/quicktime",
+          ".m4v": "video/x-m4v",
+          ".ogv": "video/ogg",
+          ".ogg": "video/ogg",
         }
         const mimeType = mimeMap[ext] || "application/octet-stream"
 

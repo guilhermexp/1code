@@ -57,6 +57,7 @@ import { defaultEditorOptions, getMonacoTheme, registerMonacoTheme } from "./mon
 import { useVSCodeTheme } from "@/lib/themes"
 import { ImageViewer } from "./image-viewer"
 import { MarkdownViewer } from "./markdown-viewer"
+import { VideoViewer } from "./video-viewer"
 
 interface FileViewerSidebarProps {
   filePath: string
@@ -335,6 +336,12 @@ export function FileViewerSidebar({
       return (
         <ViewerErrorBoundary viewerType="image" onReset={onClose}>
           <ImageViewer filePath={filePath} projectPath={projectPath} onClose={onClose} />
+        </ViewerErrorBoundary>
+      )
+    case "video":
+      return (
+        <ViewerErrorBoundary viewerType="video" onReset={onClose}>
+          <VideoViewer filePath={filePath} projectPath={projectPath} onClose={onClose} />
         </ViewerErrorBoundary>
       )
     case "unsupported":

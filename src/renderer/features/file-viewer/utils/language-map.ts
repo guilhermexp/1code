@@ -221,9 +221,13 @@ export function isDataFile(filePath: string): boolean {
 /**
  * File viewer type - determines which viewer component to use
  */
-export type FileViewerType = "code" | "image" | "markdown" | "unsupported"
+export type FileViewerType = "code" | "image" | "video" | "markdown" | "unsupported"
 
-const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".bmp"]
+const IMAGE_EXTENSIONS = [
+  ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".bmp",
+  ".avif", ".tif", ".tiff", ".heic", ".heif",
+]
+const VIDEO_EXTENSIONS = [".mp4", ".webm", ".mov", ".m4v", ".ogv", ".ogg"]
 
 const UNSUPPORTED_EXTENSIONS = [
   ".pdf", ".exe", ".dll", ".so", ".dylib", ".bin", ".dat",
@@ -237,6 +241,7 @@ export function getFileViewerType(filePath: string): FileViewerType {
   const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || ""
 
   if (IMAGE_EXTENSIONS.includes(ext)) return "image"
+  if (VIDEO_EXTENSIONS.includes(ext)) return "video"
   if (UNSUPPORTED_EXTENSIONS.includes(ext)) return "unsupported"
   if ([".md", ".mdx", ".markdown"].includes(ext)) return "markdown"
   return "code"
