@@ -4873,6 +4873,7 @@ export function ChatView({
   const isDesktop = useAtomValue(isDesktopAtom)
   const isFullscreen = useAtomValue(isFullscreenAtom)
   const sidebarOpen = useAtomValue(agentsSidebarOpenAtom)
+  const setSidebarOpen = useSetAtom(agentsSidebarOpenAtom)
   const customClaudeConfig = useAtomValue(customClaudeConfigAtom)
   const selectedOllamaModel = useAtomValue(selectedOllamaModelAtom)
   const normalizedCustomClaudeConfig =
@@ -5720,8 +5721,14 @@ export function ChatView({
       onOpenPreview()
       return
     }
+    setSidebarOpen(false)
     setIsPreviewSidebarOpen(true)
-  }, [isMobileFullscreen, onOpenPreview, setIsPreviewSidebarOpen])
+  }, [
+    isMobileFullscreen,
+    onOpenPreview,
+    setIsPreviewSidebarOpen,
+    setSidebarOpen,
+  ])
 
   // Create list of subchats with changed files for filtering
   // Only include subchats that have uncommitted changes, sorted by most recent first
