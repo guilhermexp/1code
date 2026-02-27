@@ -199,6 +199,11 @@ export function AgentsContent() {
   })
 
   useEffect(() => {
+    if (import.meta.env.DEV && !betaAutomationsEnabled) {
+      setBetaAutomationsEnabled(true)
+      return
+    }
+
     if (!betaAutomationsEnabled && automationsData && automationsData.length > 0) {
       setBetaAutomationsEnabled(true)
     }

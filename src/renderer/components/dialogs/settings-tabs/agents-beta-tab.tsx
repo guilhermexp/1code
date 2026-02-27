@@ -2,6 +2,7 @@ import { useAtom } from "jotai"
 import { Check, Copy, RefreshCw } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { useTranslation } from "react-i18next"
 import {
   autoOfflineModeAtom,
   betaAutomationsEnabledAtom,
@@ -45,6 +46,7 @@ const MINIMUM_OLLAMA_VERSION = "0.14.2"
 const RECOMMENDED_MODEL = "qwen3-coder:30b"
 
 export function AgentsBetaTab() {
+  const { t } = useTranslation("settings")
   const isNarrowScreen = useIsNarrowScreen()
   const [historyEnabled, setHistoryEnabled] = useAtom(historyEnabledAtom)
   const [showOfflineFeatures, setShowOfflineFeatures] = useAtom(showOfflineModeFeaturesAtom)
@@ -59,7 +61,7 @@ export function AgentsBetaTab() {
     queryFn: () => remoteTrpc.agents.getAgentsSubscription.query(),
   })
   const isPaidPlan = subscription?.type !== "free" && !!subscription?.type
-  const isDev = process.env.NODE_ENV === "development"
+  const isDev = import.meta.env.DEV
   const canEnableAutomations = isPaidPlan || isDev
   const [copied, setCopied] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "not-available" | "error">("idle")
@@ -73,6 +75,13 @@ export function AgentsBetaTab() {
       setBetaUpdatesEnabled(ch === "beta")
     })
   }, [])
+
+  // Dev builds should not require paid-plan gating for local testing.
+  useEffect(() => {
+    if (isDev && !automationsEnabled) {
+      setAutomationsEnabled(true)
+    }
+  }, [isDev, automationsEnabled, setAutomationsEnabled])
 
   // Check for updates with force flag to bypass cache
   const handleCheckForUpdates = async () => {
@@ -117,9 +126,9 @@ export function AgentsBetaTab() {
       {/* Header - hidden on narrow screens since it's in the navigation bar */}
       {!isNarrowScreen && (
         <div className="flex flex-col space-y-1.5 text-center sm:text-left">
-          <h3 className="text-sm font-semibold text-foreground">Beta Features</h3>
+          <h3 className="text-sm font-semibold text-foreground">{t("tabs.beta.label")}</h3>
           <p className="text-xs text-muted-foreground">
-            Enable experimental features. These may be unstable or change without notice.
+            {t("tabs.beta.description")}
           </p>
         </div>
       )}

@@ -1,6 +1,7 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { ChevronDown, MoreHorizontal, Plus, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import {
   agentsLoginModalOpenAtom,
@@ -34,6 +35,7 @@ import {
 import { Input } from "../../ui/input"
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch"
+import { RenameDialog } from "@/components/rename-dialog"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -139,6 +141,8 @@ function AccountRow({
 
 // Anthropic accounts section component
 function AnthropicAccountsSection() {
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<{ id: string; name: string } | null>(null)
   const { data: accounts, isLoading: isAccountsLoading, refetch: refetchList } =
     trpc.anthropicAccounts.list.useQuery(undefined, {
       refetchOnMount: true,
@@ -209,13 +213,21 @@ function AnthropicAccountsSection() {
   })
 
   const handleRename = (accountId: string, currentName: string | null) => {
-    const newName = window.prompt(
-      "Enter new name for this account:",
-      currentName || "Anthropic Account"
-    )
-    if (newName && newName.trim()) {
-      renameMutation.mutate({ accountId, displayName: newName.trim() })
-    }
+    setRenameTarget({
+      id: accountId,
+      name: currentName || "Anthropic Account",
+    })
+    setRenameDialogOpen(true)
+  }
+
+  const handleRenameSave = async (newName: string) => {
+    if (!renameTarget) return
+    await renameMutation.mutateAsync({
+      accountId: renameTarget.id,
+      displayName: newName.trim(),
+    })
+    setRenameDialogOpen(false)
+    setRenameTarget(null)
   }
 
   const handleRemove = (accountId: string, displayName: string | null) => {
@@ -238,29 +250,45 @@ function AnthropicAccountsSection() {
   }
 
   return (
-    <div className="bg-background rounded-lg border border-border overflow-hidden divide-y divide-border">
-        {isAccountsLoading ? (
-          <div className="p-4 text-center text-sm text-muted-foreground">
-            Loading accounts...
-          </div>
-        ) : (
-          accounts?.map((account) => (
-            <AccountRow
-              key={account.id}
-              account={account}
-              isActive={activeAccount?.id === account.id}
-              onSetActive={() => setActiveMutation.mutate({ accountId: account.id })}
-              onRename={() => handleRename(account.id, account.displayName)}
-              onRemove={() => handleRemove(account.id, account.displayName)}
-              isLoading={isLoading}
-            />
-          ))
-        )}
-    </div>
+    <>
+      <div className="bg-background rounded-lg border border-border overflow-hidden divide-y divide-border">
+          {isAccountsLoading ? (
+            <div className="p-4 text-center text-sm text-muted-foreground">
+              Loading accounts...
+            </div>
+          ) : (
+            accounts?.map((account) => (
+              <AccountRow
+                key={account.id}
+                account={account}
+                isActive={activeAccount?.id === account.id}
+                onSetActive={() => setActiveMutation.mutate({ accountId: account.id })}
+                onRename={() => handleRename(account.id, account.displayName)}
+                onRemove={() => handleRemove(account.id, account.displayName)}
+                isLoading={isLoading}
+              />
+            ))
+          )}
+      </div>
+
+      <RenameDialog
+        isOpen={renameDialogOpen}
+        onClose={() => {
+          setRenameDialogOpen(false)
+          setRenameTarget(null)
+        }}
+        onSave={handleRenameSave}
+        currentName={renameTarget?.name ?? ""}
+        isLoading={renameMutation.isPending}
+        title="Rename account"
+        placeholder="Account name"
+      />
+    </>
   )
 }
 
 export function AgentsModelsTab() {
+  const { t } = useTranslation("settings")
   const [storedConfig, setStoredConfig] = useAtom(customClaudeConfigAtom)
   const [model, setModel] = useState(storedConfig.model)
   const [baseUrl, setBaseUrl] = useState(storedConfig.baseUrl)
@@ -509,7 +537,10 @@ export function AgentsModelsTab() {
       {/* Header */}
       {!isNarrowScreen && (
         <div className="flex flex-col space-y-1.5 text-center sm:text-left">
-          <h3 className="text-sm font-semibold text-foreground">Models</h3>
+          <h3 className="text-sm font-semibold text-foreground">{t("tabs.models.label")}</h3>
+          <p className="text-xs text-muted-foreground">
+            {t("tabs.models.description")}
+          </p>
         </div>
       )}
 

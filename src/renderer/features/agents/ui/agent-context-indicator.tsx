@@ -114,7 +114,7 @@ export const AgentContextIndicator = memo(function AgentContextIndicator({
         <div
           onClick={isClickable ? onCompact : undefined}
           className={cn(
-            "h-7 inline-flex items-center gap-1.5 px-2 rounded-md border border-border/60 bg-background/70",
+            "h-7 w-7 inline-flex items-center justify-center rounded-md",
             isClickable
               ? "cursor-pointer hover:opacity-70 transition-opacity"
               : "cursor-default",
