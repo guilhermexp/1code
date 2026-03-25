@@ -4,6 +4,7 @@ import { useAtomValue } from "jotai"
 import { ListTree, MoreHorizontal } from "lucide-react"
 import { memo, useCallback, useContext, useMemo, useState } from "react"
 import { normalizeCodexToolPart } from "../../../../shared/codex-tool-normalizer"
+import type { MessagePart } from "../stores/message-store"
 
 import {
   DropdownMenu,
@@ -500,8 +501,9 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
   // Normalize ACP/codex tool parts into canonical types (e.g. "tool-Read README.md" → "tool-Read").
   // Note: no useMemo — AI SDK mutates parts in-place, so the array reference
   // doesn't change and useMemo would return stale results.
+  const rawMessageParts = (message?.parts || []) as MessagePart[]
   const messageParts = normalizeAcpParts(
-    (message?.parts || []).map((part) => normalizeCodexToolPart(part) as any),
+    rawMessageParts.map((part: MessagePart) => normalizeCodexToolPart(part) as any),
   )
 
   const contentParts = useMemo(() =>

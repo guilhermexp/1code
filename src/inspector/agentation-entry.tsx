@@ -1,4 +1,3 @@
-import { createElement } from "react"
 import { createRoot } from "react-dom/client"
 import { Agentation } from "agentation"
 
@@ -15,14 +14,14 @@ export function mount() {
 
   root = createRoot(container)
   root.render(
-    createElement(Agentation, {
-      copyToClipboard: true,
-      onCopy: (markdown: string) => {
+    <Agentation
+      copyToClipboard
+      onCopy={(markdown: string) => {
         try {
           console.warn(PREFIX + encodeURIComponent(markdown))
         } catch {}
-      },
-    }),
+      }}
+    />,
   )
 }
 

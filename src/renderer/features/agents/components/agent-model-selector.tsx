@@ -102,14 +102,17 @@ function CodexThinkingSubMenu({
   const subMenuRef = useRef<HTMLDivElement>(null)
   const [showSub, setShowSub] = useState(false)
   const [subPos, setSubPos] = useState({ top: 0, left: 0 })
-  const closeTimeout = useRef<ReturnType<typeof setTimeout>>()
+  const closeTimeout = useRef<number | null>(null)
 
   const scheduleClose = useCallback(() => {
-    closeTimeout.current = setTimeout(() => setShowSub(false), 150)
+    closeTimeout.current = window.setTimeout(() => setShowSub(false), 150)
   }, [])
 
   const cancelClose = useCallback(() => {
-    clearTimeout(closeTimeout.current)
+    if (closeTimeout.current !== null) {
+      window.clearTimeout(closeTimeout.current)
+      closeTimeout.current = null
+    }
   }, [])
 
   const handleTriggerEnter = useCallback(() => {
@@ -146,7 +149,11 @@ function CodexThinkingSubMenu({
   )
 
   useEffect(() => {
-    return () => clearTimeout(closeTimeout.current)
+    return () => {
+      if (closeTimeout.current !== null) {
+        window.clearTimeout(closeTimeout.current)
+      }
+    }
   }, [])
 
   return (

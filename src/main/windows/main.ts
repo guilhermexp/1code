@@ -218,13 +218,13 @@ function registerIpcHandlers(): void {
   })
 
   // New window - optionally open with specific chat/subchat
-  ipcMain.handle("window:new", (_event, options?: { chatId?: string; subChatId?: string }) => {
+  ipcMain.handle("window:new", async (_event, options?: { chatId?: string; subChatId?: string }) => {
     // If chatId specified, check ownership atomically via focusChatOwner
     if (options?.chatId && windowManager.focusChatOwner(options.chatId)) {
       return { blocked: true }
     }
 
-    const win = createWindow(options)
+    const win = await createWindow(options)
 
     // Pre-claim the chat for the new window
     if (options?.chatId) {
